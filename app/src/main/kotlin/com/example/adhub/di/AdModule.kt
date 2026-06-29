@@ -34,4 +34,7 @@ val adModule = module {
 
     // ── Repository ──
     single<AdConfigRepository> { AdConfigRepositoryImpl(get()) }
+
+    // ── ViewModel ──
+    viewModel { com.example.adhub.ui.screens.banner.BannerViewModel(get(), get()) }
 }

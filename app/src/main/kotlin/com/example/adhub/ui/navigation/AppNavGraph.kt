@@ -4,7 +4,9 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import com.example.adhub.ui.screens.banner.BannerScreen
 import com.example.adhub.ui.screens.home.HomeScreen
+import org.koin.compose.viewmodel.koinViewModel
 
 /**
  * 应用路由定义。
@@ -38,8 +40,15 @@ fun AppNavGraph(navController: NavHostController) {
             )
         }
 
-        // TODO: 后续 feature 分支实现各页面
-        composable(Routes.BANNER) { }
+        composable(Routes.BANNER) {
+            val vm: com.example.adhub.ui.screens.banner.BannerViewModel = koinViewModel()
+            BannerScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        // TODO: 后续 feature 分支实现
         composable(Routes.FEED) { }
         composable(Routes.INTERSTITIAL) { }
         composable(Routes.SPLASH) { }
