@@ -5,10 +5,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.navigation.compose.rememberNavController
+import com.example.adhub.ui.navigation.AppNavGraph
 import com.example.adhub.ui.theme.AdHubTheme
 
 /**
- * 根 Composable。由 [MainActivity] 调用。
+ * 根 Composable，由 [MainActivity] 调用。
  */
 @Composable
 fun AdHubApp() {
@@ -17,7 +19,8 @@ fun AdHubApp() {
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,
         ) {
-            // TODO: NavHost 导航图
+            val navController = rememberNavController()
+            AppNavGraph(navController = navController)
         }
     }
 }
