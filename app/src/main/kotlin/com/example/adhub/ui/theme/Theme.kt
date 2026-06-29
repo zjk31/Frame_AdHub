@@ -1,4 +1,4 @@
-package com.example.admerge.ui.theme
+package com.example.adhub.ui.theme
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -10,7 +10,7 @@ private val DarkColors = darkColorScheme(
 )
 
 @Composable
-fun AdMergeTheme(content: @Composable () -> Unit) {
+fun AdHubTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = DarkColors,
         content = content,

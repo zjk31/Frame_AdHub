@@ -1,9 +1,9 @@
-package com.example.admerge.data.local
+package com.example.adhub.data.local
 
 import android.content.Context
 import android.content.SharedPreferences
-import com.example.admerge.domain.model.AdChannel
-import com.example.admerge.domain.repository.AdChannelRepository
+import com.example.adhub.domain.model.AdChannel
+import com.example.adhub.domain.repository.AdChannelRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow

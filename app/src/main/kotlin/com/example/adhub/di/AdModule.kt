@@ -1,7 +1,7 @@
-package com.example.admerge.di
+package com.example.adhub.di
 
-import com.example.admerge.data.local.AdChannelStore
-import com.example.admerge.domain.repository.AdChannelRepository
+import com.example.adhub.data.local.AdChannelStore
+import com.example.adhub.domain.repository.AdChannelRepository
 import org.koin.dsl.module
 
 /**

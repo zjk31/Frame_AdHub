@@ -7,11 +7,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.admerge"
+    namespace = "com.example.adhub"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.admerge"
+        applicationId = "com.example.adhub"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

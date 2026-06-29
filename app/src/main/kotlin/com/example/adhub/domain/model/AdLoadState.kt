@@ -1,4 +1,4 @@
-package com.example.admerge.domain.model
+package com.example.adhub.domain.model
 
 /**
  * 广告加载状态。UI 层根据此 sealed class 决定展示 Loading / 广告 / 空白。

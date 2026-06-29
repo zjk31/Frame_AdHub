@@ -1,18 +1,18 @@
-package com.example.admerge.ui
+package com.example.adhub.ui
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import com.example.admerge.ui.theme.AdMergeTheme
+import com.example.adhub.ui.theme.AdHubTheme
 
 /**
  * 根 Composable。由 [MainActivity] 调用。
  */
 @Composable
-fun AdMergeApp() {
-    AdMergeTheme {
+fun AdHubApp() {
+    AdHubTheme {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,

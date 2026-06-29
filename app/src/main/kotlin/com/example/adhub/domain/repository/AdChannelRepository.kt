@@ -1,6 +1,6 @@
-package com.example.admerge.domain.repository
+package com.example.adhub.domain.repository
 
-import com.example.admerge.domain.model.AdChannel
+import com.example.adhub.domain.model.AdChannel
 import kotlinx.coroutines.flow.Flow
 
 /**

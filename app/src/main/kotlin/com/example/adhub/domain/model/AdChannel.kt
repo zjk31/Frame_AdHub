@@ -1,4 +1,4 @@
-package com.example.admerge.domain.model
+package com.example.adhub.domain.model
 
 /**
  * 广告通道，远程 API 下发 [code] 决定当前使用哪家广告 SDK。

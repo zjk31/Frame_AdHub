@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "AdMerge"
+rootProject.name = "Frame_AdHub"
 include(":app")

@@ -1,4 +1,4 @@
-package com.example.admerge.domain.model
+package com.example.adhub.domain.model
 
 /**
  * 激励视频回调结果。

@@ -1,4 +1,4 @@
-package com.example.admerge.core.network
+package com.example.adhub.core.network
 
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor

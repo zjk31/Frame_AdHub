@@ -1,6 +1,6 @@
-package com.example.admerge.data.remote
+package com.example.adhub.data.remote
 
-import com.example.admerge.domain.model.AdChannel
+import com.example.adhub.domain.model.AdChannel
 import retrofit2.http.GET
 
 /**

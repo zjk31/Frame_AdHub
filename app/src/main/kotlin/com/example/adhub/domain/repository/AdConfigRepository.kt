@@ -1,7 +1,7 @@
-package com.example.admerge.domain.repository
+package com.example.adhub.domain.repository
 
-import com.example.admerge.domain.model.AdChannel
-import com.example.admerge.domain.model.AdPlacement
+import com.example.adhub.domain.model.AdChannel
+import com.example.adhub.domain.model.AdPlacement
 
 /**
  * 广告配置仓库接口：远程配置拉取 + 代码位解析。

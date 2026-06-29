@@ -1,4 +1,4 @@
-package com.example.admerge.domain.model
+package com.example.adhub.domain.model
 
 /**
  * 广告位类型，对应各 SDK 中的不同展示形式。

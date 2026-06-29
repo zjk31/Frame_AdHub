@@ -1,6 +1,6 @@
-# CONTEXT — Ad Merge
+# CONTEXT — Frame_AdHub
 
-纯 Kotlin Android 融合广告 App。参考 `flutter_merge` 项目中 Android 原生侧的广告架构模式，Compose 构建 UI。
+纯 Kotlin Android 广告聚合 App。参考 `flutter_merge` 项目中 Android 原生侧的广告架构模式，Compose 构建 UI。
 
 ## 技术栈
 

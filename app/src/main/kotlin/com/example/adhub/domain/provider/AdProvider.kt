@@ -1,11 +1,11 @@
-package com.example.admerge.domain.provider
+package com.example.adhub.domain.provider
 
 import android.app.Activity
 import android.content.Context
 import android.view.View
-import com.example.admerge.domain.model.AdLoadState
-import com.example.admerge.domain.model.AdPlacement
-import com.example.admerge.domain.model.RewardResult
+import com.example.adhub.domain.model.AdLoadState
+import com.example.adhub.domain.model.AdPlacement
+import com.example.adhub.domain.model.RewardResult
 import kotlinx.coroutines.flow.StateFlow
 
 /**
