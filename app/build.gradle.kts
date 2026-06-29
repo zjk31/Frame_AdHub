@@ -1,45 +1,100 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.koin.ksp)
 }
 
 android {
-    namespace = "com.example.myapplication"
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
-    }
+    namespace = "com.example.admerge"
+    compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.myapplication"
+        applicationId = "com.example.admerge"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            optimization {
-                enable = false
-            }
+            isMinifyEnabled = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+        debug {
+            isMinifyEnabled = false
         }
     }
+
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    buildFeatures {
+        compose = true
     }
 }
 
 dependencies {
-    implementation(libs.androidx.activity.ktx)
-    implementation(libs.androidx.appcompat)
-    implementation(libs.androidx.constraintlayout)
+    // ── AAR: 广告 SDK（从 flutter_merge 项目复制） ──
+    // 友盟
+    implementation(fileTree(mapOf("dir" to "libs", "include" to "umeng-*.aar")))
+    // 穿山甲
+    implementation(fileTree(mapOf("dir" to "libs", "include" to "open_ad_sdk-*.aar")))
+    // 优量汇
+    implementation(fileTree(mapOf("dir" to "libs", "include" to "GDTSDK*.aar")))
+    // 百度
+    implementation(fileTree(mapOf("dir" to "libs", "include" to "Baidu_MobAds_SDK-*.aar")))
+    implementation(fileTree(mapOf("dir" to "libs", "include" to "Baidu_MobAds_Tools_SDK-*.aar")))
+    // 其他
+    implementation(fileTree(mapOf("dir" to "libs", "include" to "uyumao-*.aar")))
+
+    // ── AndroidX ──
     implementation(libs.androidx.core.ktx)
-    implementation(libs.material)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+
+    // ── Compose BOM ──
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.ui.graphics)
+    implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.material.icons)
+    implementation(libs.compose.navigation)
+    debugImplementation(libs.compose.ui.tooling)
+
+    // ── Koin DI ──
+    implementation(platform(libs.koin.bom))
+    implementation(libs.koin.android)
+    implementation(libs.koin.compose)
+    implementation(libs.koin.compose.viewmodel)
+    implementation(libs.koin.annotations)
+    ksp(libs.koin.ksp.compiler)
+
+    // ── Network ──
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.gson)
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging)
+
+    // ── Image ──
+    implementation(libs.coil.compose)
+
+    // ── Testing ──
     testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
 }

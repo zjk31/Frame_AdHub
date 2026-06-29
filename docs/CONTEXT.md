@@ -52,3 +52,23 @@
 
 ### 热启动插屏 (Resume Interstitial)
 App 回到前台时展示插屏。最小间隔 600 秒，首次恢复跳过，纯净模式抑制。
+
+---
+
+## 已确认的设计决策
+
+| # | 决策 | 结论 |
+|---|---|---|
+| 1 | 技术栈 | 纯 Kotlin，不取参考项目的 Flutter 层 |
+| 2 | UI | Jetpack Compose |
+| 3 | 广告位 | 全量 8 种 |
+| 4 | 架构 | Clean Architecture + 策略模式（domain/data/ui） |
+| 5 | 远程通道切换 | API 下发 adType → AdChannelStore → AdProvider |
+| 6 | Activity | 单 Activity + Compose Navigation |
+| 7 | DI | Koin Annotations（编译期验证 + 运行时灵活） |
+| 8 | 包结构 | domain/data/ui + data/provider 下按 SDK 物理隔离 |
+| 9 | 网络层 | Retrofit + OkHttp |
+| 10 | KMP | 不做——广告 SDK 只有 Android AAR，无跨平台场景 |
+| 11 | Git 策略 | GitHub Flow：main + feature 分支 |
+| 12 | AAR 管理 | 直接提交到 app/libs/，`.gitattributes` 标记 binary |
+
