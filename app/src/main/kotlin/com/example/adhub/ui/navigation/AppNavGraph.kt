@@ -6,6 +6,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.example.adhub.ui.screens.banner.BannerScreen
 import com.example.adhub.ui.screens.home.HomeScreen
+import com.example.adhub.ui.screens.splash.SplashScreen
 import org.koin.compose.viewmodel.koinViewModel
 
 /**
@@ -51,7 +52,13 @@ fun AppNavGraph(navController: NavHostController) {
         // TODO: 后续 feature 分支实现
         composable(Routes.FEED) { }
         composable(Routes.INTERSTITIAL) { }
-        composable(Routes.SPLASH) { }
+        composable(Routes.SPLASH) {
+            val vm: com.example.adhub.ui.screens.splash.SplashViewModel = koinViewModel()
+            SplashScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+            )
+        }
         composable(Routes.REWARD) { }
     }
 }

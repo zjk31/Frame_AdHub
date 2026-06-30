@@ -37,4 +37,5 @@ val adModule = module {
 
     // ── ViewModel ──
     viewModel { com.example.adhub.ui.screens.banner.BannerViewModel(get(), get()) }
+    viewModel { com.example.adhub.ui.screens.splash.SplashViewModel(get(), get()) }
 }

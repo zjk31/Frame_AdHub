@@ -1,12 +1,13 @@
 [versions]
-agp = "9.2.1"
-kotlin = "2.2.0"
-ksp = "2.2.0-1.0.31"
+agp = "8.9.1"
+kotlin = "2.3.21"
+ksp = "2.3.0"
 
 # AndroidX
-coreKtx = "1.19.0"
+coreKtx = "1.17.0"
 activityCompose = "1.13.0"
-lifecycleRuntime = "2.10.1"
+lifecycleRuntime = "2.10.0"
+material = "1.12.0"
 
 # Compose
 composeBom = "2025.06.00"
@@ -14,7 +15,8 @@ composeNavigation = "2.9.2"
 
 # Koin
 koinBom = "4.2.0"
-koinAnnotations = "2.3.0"
+koinAnnotations = "4.2.0"
+koinKspCompiler = "2.1.0"
 
 # Network
 retrofit = "2.11.0"
@@ -35,6 +37,9 @@ androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = 
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycleRuntime" }
 
+# Material Design (View-based, needed by ad SDKs)
+material = { group = "com.google.android.material", name = "material", version.ref = "material" }
+
 # Compose
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 compose-ui = { group = "androidx.compose.ui", name = "ui" }
@@ -51,7 +56,7 @@ koin-android = { group = "io.insert-koin", name = "koin-android" }
 koin-compose = { group = "io.insert-koin", name = "koin-compose" }
 koin-compose-viewmodel = { group = "io.insert-koin", name = "koin-compose-viewmodel" }
 koin-annotations = { group = "io.insert-koin", name = "koin-annotations", version.ref = "koinAnnotations" }
-koin-ksp-compiler = { group = "io.insert-koin", name = "koin-ksp-compiler", version.ref = "koinAnnotations" }
+koin-ksp-compiler = { group = "io.insert-koin", name = "koin-ksp-compiler", version.ref = "koinKspCompiler" }
 
 # Network
 retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
@@ -71,5 +76,4 @@ androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-co
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-koin-ksp = { id = "io.insert-koin.koin-ksp", version.ref = "koinAnnotations" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

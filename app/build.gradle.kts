@@ -3,17 +3,17 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.koin.ksp)
+    // Koin KSP compiler is a dependency (ksp("io.insert-koin:koin-ksp-compiler")), not a plugin
 }
 
 android {
     namespace = "com.example.adhub"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.example.adhub"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
 
@@ -23,6 +23,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -38,12 +39,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
@@ -66,6 +69,9 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
 
+    // Material Design (View-based, required by ad SDKs)
+    implementation(libs.material)
+
     // ── Compose BOM ──
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
@@ -81,8 +87,9 @@ dependencies {
     implementation(libs.koin.android)
     implementation(libs.koin.compose)
     implementation(libs.koin.compose.viewmodel)
-    implementation(libs.koin.annotations)
-    ksp(libs.koin.ksp.compiler)
+    // TODO: 添加 @Module 注解类后取消注释
+    // implementation(libs.koin.annotations)
+    // ksp(libs.koin.ksp.compiler)
 
     // ── Network ──
     implementation(libs.retrofit)

@@ -14,7 +14,7 @@
 | 广告 SDK | 友盟 / 穿山甲 / 优量汇 / 百度 (AAR) |
 | Activity | 单 Activity + Compose Navigation |
 | 最少 SDK | 26 |
-| 目标 SDK | 36 |
+| 目标 SDK | 35 |
 
 ## 广告位（全量 8 种）
 

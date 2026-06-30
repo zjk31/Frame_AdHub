@@ -10,13 +10,17 @@ import android.widget.ProgressBar
 import com.baidu.mobads.sdk.api.BaiduNativeManager
 import com.baidu.mobads.sdk.api.ExpressResponse
 import com.baidu.mobads.sdk.api.RequestParameters
+import com.baidu.mobads.sdk.api.SplashAd
+import com.baidu.mobads.sdk.api.SplashInteractionListener
 import com.example.adhub.core.AppContextHolder
 import com.example.adhub.domain.model.AdLoadState
 import com.example.adhub.domain.model.RewardResult
 import com.example.adhub.domain.provider.AdProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.koin.core.annotation.Single
+import kotlin.coroutines.resume
 
 @Single(binds = [AdProvider::class])
 class BaiduAdProvider : AdProvider {
@@ -117,5 +121,80 @@ class BaiduAdProvider : AdProvider {
         activity: Activity, codeId: String, slotKey: String,
     ): RewardResult = RewardResult(shown = false, finished = false, rewardGranted = false)
 
-    override suspend fun showSplashAd(activity: Activity, codeId: String): Boolean = false
+    override suspend fun showSplashAd(activity: Activity, codeId: String): Boolean {
+        if (activity.isFinishing || activity.isDestroyed) return false
+        return suspendCancellableCoroutine { cont ->
+            val container = FrameLayout(activity).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                )
+            }
+            val decorView = activity.window.decorView as? ViewGroup ?: run {
+                cont.resume(false); return@suspendCancellableCoroutine
+            }
+
+            val dm = activity.resources.displayMetrics
+            val params = RequestParameters.Builder()
+                .addExtra(SplashAd.KEY_TIMEOUT, SPLASH_TIMEOUT_MS.toString())
+                .addExtra(SplashAd.KEY_DISPLAY_DOWNLOADINFO, "true")
+                .addExtra(SplashAd.KEY_POPDIALOG_DOWNLOAD, "true")
+                .setWidth(Math.max(1, (dm.widthPixels / dm.density).toInt()))
+                .setHeight(Math.max(1, (dm.heightPixels / dm.density).toInt()))
+                .build()
+
+            var splashAd: SplashAd? = null
+
+            cont.invokeOnCancellation {
+                splashAd?.destroy()
+                try { decorView.removeView(container) } catch (_: Exception) {}
+            }
+
+            splashAd = SplashAd(activity, codeId, params, object : SplashInteractionListener {
+                override fun onLpClosed() {
+                    cleanupAndResume()
+                }
+
+                override fun onAdDismissed() {
+                    cleanupAndResume()
+                }
+
+                override fun onAdSkip() {
+                    cleanupAndResume()
+                }
+
+                override fun onADLoaded() {
+                    if (activity.isFinishing || activity.isDestroyed || !cont.isActive) return
+                    decorView.post {
+                        decorView.addView(container)
+                        splashAd?.show(container)
+                    }
+                }
+
+                override fun onAdExposed() {}
+                override fun onAdPresent() {}
+                override fun onAdClick() {}
+                override fun onAdCacheSuccess() {}
+
+                override fun onAdFailed(reason: String) {
+                    if (cont.isActive) cont.resume(false)
+                }
+
+                override fun onAdCacheFailed() {
+                    if (cont.isActive) cont.resume(false)
+                }
+
+                private fun cleanupAndResume() {
+                    try { decorView.removeView(container) } catch (_: Exception) {}
+                    splashAd?.destroy()
+                    if (cont.isActive) cont.resume(true)
+                }
+            })
+            splashAd.load()
+        }
+    }
+
+    companion object {
+        private const val SPLASH_TIMEOUT_MS = 5000
+    }
 }

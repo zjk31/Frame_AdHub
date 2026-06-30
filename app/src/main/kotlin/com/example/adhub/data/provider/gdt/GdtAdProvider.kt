@@ -12,10 +12,14 @@ import com.example.adhub.domain.model.RewardResult
 import com.example.adhub.domain.provider.AdProvider
 import com.qq.e.ads.banner2.UnifiedBannerADListener
 import com.qq.e.ads.banner2.UnifiedBannerView
+import com.qq.e.ads.splash.SplashAD
+import com.qq.e.ads.splash.SplashADListener
 import com.qq.e.comm.util.AdError
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.koin.core.annotation.Single
+import kotlin.coroutines.resume
 
 @Single(binds = [AdProvider::class])
 class GdtAdProvider : AdProvider {
@@ -76,5 +80,53 @@ class GdtAdProvider : AdProvider {
         activity: Activity, codeId: String, slotKey: String,
     ): RewardResult = RewardResult(shown = false, finished = false, rewardGranted = false)
 
-    override suspend fun showSplashAd(activity: Activity, codeId: String): Boolean = false
+    override suspend fun showSplashAd(activity: Activity, codeId: String): Boolean {
+        if (activity.isFinishing || activity.isDestroyed) return false
+        return suspendCancellableCoroutine { cont ->
+            val container = FrameLayout(activity).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                )
+            }
+            val decorView = activity.window.decorView as? ViewGroup ?: run {
+                cont.resume(false); return@suspendCancellableCoroutine
+            }
+
+            var splashAd: SplashAD? = null
+
+            cont.invokeOnCancellation {
+                try { decorView.removeView(container) } catch (_: Exception) {}
+            }
+
+            splashAd = SplashAD(activity, codeId, object : SplashADListener {
+                override fun onADPresent() {}
+                override fun onADClicked() {}
+                override fun onADTick(millisUntilFinished: Long) {}
+                override fun onADExposure() {}
+
+                override fun onADLoaded(expireTimestamp: Long) {
+                    if (activity.isFinishing || activity.isDestroyed || !cont.isActive) return
+                    decorView.post {
+                        decorView.addView(container)
+                        splashAd?.showAd(container)
+                    }
+                }
+
+                override fun onNoAD(error: AdError) {
+                    if (cont.isActive) cont.resume(false)
+                }
+
+                override fun onADDismissed() {
+                    try { decorView.removeView(container) } catch (_: Exception) {}
+                    if (cont.isActive) cont.resume(true)
+                }
+            }, SPLASH_TIMEOUT_MS)
+            splashAd.fetchAdOnly()
+        }
+    }
+
+    companion object {
+        private const val SPLASH_TIMEOUT_MS = 5000
+    }
 }

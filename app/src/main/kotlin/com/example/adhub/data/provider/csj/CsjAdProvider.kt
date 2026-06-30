@@ -7,6 +7,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import com.bytedance.sdk.openadsdk.AdSlot
+import com.bytedance.sdk.openadsdk.CSJAdError
+import com.bytedance.sdk.openadsdk.CSJSplashAd
 import com.bytedance.sdk.openadsdk.TTAdNative
 import com.bytedance.sdk.openadsdk.TTAdSdk
 import com.bytedance.sdk.openadsdk.TTNativeExpressAd
@@ -16,7 +18,9 @@ import com.example.adhub.domain.model.RewardResult
 import com.example.adhub.domain.provider.AdProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.koin.core.annotation.Single
+import kotlin.coroutines.resume
 
 @Single(binds = [AdProvider::class])
 class CsjAdProvider : AdProvider {
@@ -93,7 +97,65 @@ class CsjAdProvider : AdProvider {
         activity: Activity, codeId: String, slotKey: String,
     ): RewardResult = RewardResult(shown = false, finished = false, rewardGranted = false)
 
-    override suspend fun showSplashAd(activity: Activity, codeId: String): Boolean = false
+    override suspend fun showSplashAd(activity: Activity, codeId: String): Boolean {
+        if (activity.isFinishing || activity.isDestroyed) return false
+        return suspendCancellableCoroutine { cont ->
+            val container = FrameLayout(activity).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                )
+                setBackgroundColor(android.graphics.Color.WHITE)
+            }
+            val decorView = activity.window.decorView as? ViewGroup ?: run {
+                cont.resume(false); return@suspendCancellableCoroutine
+            }
+
+            val dm = activity.resources.displayMetrics
+            val adSlot = AdSlot.Builder()
+                .setCodeId(codeId)
+                .setExpressViewAcceptedSize(dm.widthPixels / dm.density, dm.heightPixels / dm.density)
+                .build()
+
+            val adNative = TTAdSdk.getAdManager().createAdNative(activity)
+
+            cont.invokeOnCancellation {
+                try { decorView.removeView(container) } catch (_: Exception) {}
+            }
+
+            adNative.loadSplashAd(adSlot, object : TTAdNative.CSJSplashAdListener {
+                override fun onSplashLoadSuccess(ad: CSJSplashAd) {
+                    // 等待 onSplashRenderSuccess
+                }
+
+                override fun onSplashLoadFail(error: CSJAdError) {
+                    if (cont.isActive) cont.resume(false)
+                }
+
+                override fun onSplashRenderSuccess(ad: CSJSplashAd) {
+                    if (activity.isFinishing || activity.isDestroyed || !cont.isActive) return
+                    ad.setSplashAdListener(object : CSJSplashAd.SplashAdListener {
+                        override fun onSplashAdShow(ad: CSJSplashAd) {}
+
+                        override fun onSplashAdClick(ad: CSJSplashAd) {}
+
+                        override fun onSplashAdClose(ad: CSJSplashAd, closeType: Int) {
+                            try { decorView.removeView(container) } catch (_: Exception) {}
+                            if (cont.isActive) cont.resume(true)
+                        }
+                    })
+                    decorView.post {
+                        decorView.addView(container)
+                        ad.showSplashView(container)
+                    }
+                }
+
+                override fun onSplashRenderFail(ad: CSJSplashAd, error: CSJAdError) {
+                    if (cont.isActive) cont.resume(false)
+                }
+            }, SPLASH_TIMEOUT_MS)
+        }
+    }
 
     // ── 工具 ──
 
@@ -108,5 +170,9 @@ class CsjAdProvider : AdProvider {
             val lp = FrameLayout.LayoutParams(w, h, Gravity.CENTER)
             addView(adView, lp)
         }
+    }
+
+    companion object {
+        private const val SPLASH_TIMEOUT_MS = 5000
     }
 }

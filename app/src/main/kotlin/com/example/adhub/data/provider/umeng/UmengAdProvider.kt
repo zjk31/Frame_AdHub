@@ -12,13 +12,16 @@ import com.example.adhub.domain.model.AdLoadState
 import com.example.adhub.domain.model.RewardResult
 import com.example.adhub.domain.provider.AdProvider
 import com.umeng.union.UMNativeAD
+import com.umeng.union.UMSplashAD
 import com.umeng.union.UMUnionSdk
 import com.umeng.union.api.UMAdConfig
 import com.umeng.union.api.UMUnionApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.koin.core.annotation.Single
 import java.net.URL
+import kotlin.coroutines.resume
 
 @Single(binds = [AdProvider::class])
 class UmengAdProvider : AdProvider {
@@ -80,5 +83,52 @@ class UmengAdProvider : AdProvider {
         activity: Activity, codeId: String, slotKey: String,
     ): RewardResult = RewardResult(shown = false, finished = false, rewardGranted = false)
 
-    override suspend fun showSplashAd(activity: Activity, codeId: String): Boolean = false
+    override suspend fun showSplashAd(activity: Activity, codeId: String): Boolean {
+        if (activity.isFinishing || activity.isDestroyed) return false
+        return suspendCancellableCoroutine { cont ->
+            val container = FrameLayout(activity).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                )
+            }
+            val decorView = activity.window.decorView as? ViewGroup ?: run {
+                cont.resume(false); return@suspendCancellableCoroutine
+            }
+
+            cont.invokeOnCancellation {
+                try { decorView.removeView(container) } catch (_: Exception) {}
+            }
+
+            val config = UMAdConfig.Builder().setSlotId(codeId).build()
+
+            UMUnionSdk.loadSplashAd(config, object : UMUnionApi.AdLoadListener<UMSplashAD> {
+                override fun onSuccess(type: UMUnionApi.AdType?, ad: UMSplashAD) {
+                    if (activity.isFinishing || activity.isDestroyed || !cont.isActive) return
+                    ad.setAdEventListener(object : UMUnionApi.SplashAdListener {
+                        override fun onDismissed() {
+                            try { decorView.removeView(container) } catch (_: Exception) {}
+                            if (cont.isActive) cont.resume(true)
+                        }
+
+                        override fun onExposed() {}
+                        override fun onClicked(view: View?) {}
+                        override fun onError(code: Int, message: String?) {}
+                    })
+                    decorView.post {
+                        decorView.addView(container)
+                        ad.show(container)
+                    }
+                }
+
+                override fun onFailure(type: UMUnionApi.AdType?, message: String?) {
+                    if (cont.isActive) cont.resume(false)
+                }
+            }, SPLASH_TIMEOUT_MS)
+        }
+    }
+
+    companion object {
+        private const val SPLASH_TIMEOUT_MS = 5000
+    }
 }
