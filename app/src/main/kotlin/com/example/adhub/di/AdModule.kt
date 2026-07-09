@@ -18,8 +18,13 @@ import com.example.adhub.domain.provider.AdProvider
 import com.example.adhub.domain.repository.AdChannelRepository
 import com.example.adhub.domain.repository.AdConfigRepository
 import com.example.adhub.domain.repository.TokenRepository
+import okhttp3.OkHttpClient
+import okhttp3.logging.HttpLoggingInterceptor
 import org.koin.androidx.viewmodel.dsl.viewModel
 import org.koin.dsl.module
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+import java.util.concurrent.TimeUnit
 
 val adModule = module {
     // ── 本地存储 ──
@@ -33,7 +38,24 @@ val adModule = module {
 
     // ── API 服务 ──
     single<RemoteConfigApi> { get<NetworkClient>().createService() }
-    single<AuthApi> { get<NetworkClient>().createService() }
+
+    // AuthApi 使用独立的 OkHttpClient（不加认证拦截器），避免循环依赖：
+    // NetworkClient → TokenAuthenticator → AuthApi → NetworkClient
+    single<AuthApi> {
+        val authClient = OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .addInterceptor(HttpLoggingInterceptor().apply {
+                level = HttpLoggingInterceptor.Level.BODY
+            })
+            .build()
+        Retrofit.Builder()
+            .baseUrl(NetworkClient.BASE_URL)
+            .client(authClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(AuthApi::class.java)
+    }
 
     // ── AdProvider 四通道实现 ──
     single<Map<AdChannel, AdProvider>> {
