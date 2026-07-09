@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "com.example.adhub"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.adhub"
@@ -51,7 +51,7 @@ kotlin {
 }
 
 dependencies {
-    // ── AAR: 广告 SDK（从 flutter_merge 项目复制） ──
+    // ── AAR: 广告 SDK（从 flutter_merge 项目复制） ──·
     // 友盟
     implementation(fileTree(mapOf("dir" to "libs", "include" to "umeng-*.aar")))
     // 穿山甲
@@ -68,6 +68,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.process)
 
     // Material Design (View-based, required by ad SDKs)
     implementation(libs.material)
