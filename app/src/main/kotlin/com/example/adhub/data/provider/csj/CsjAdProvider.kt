@@ -26,6 +26,7 @@ import com.example.adhub.domain.provider.AdProvider
 import com.bytedance.sdk.openadsdk.TTFullScreenVideoAd
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -179,6 +180,8 @@ class CsjAdProvider(
             .setCodeId(codeId)
             .setImageAcceptedSize(screenWidthPx, (heightDp * density).toInt())
             .setExpressViewAcceptedSize(widthDp, heightDp)
+            .setMediationAdSlot(com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot.Builder()
+                .setExtraObject("show_adn_load_error_detail", true).build())
             .build()
 
         val adNative = TTAdSdk.getAdManager().createAdNative(ctx)
@@ -224,6 +227,8 @@ class CsjAdProvider(
             .setImageAcceptedSize(ctx.resources.displayMetrics.widthPixels, 0)
             .setAdCount(count.coerceAtLeast(1))
             .setAdLoadType(TTAdLoadType.LOAD)
+            .setMediationAdSlot(com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot.Builder()
+                .setExtraObject("show_adn_load_error_detail", true).build())
             .build()
 
         val adNative = TTAdSdk.getAdManager().createAdNative(ctx)
@@ -343,7 +348,8 @@ class CsjAdProvider(
             return RewardResult(finished = true, errorMessage = "invalid_slot")
         }
 
-        return suspendCancellableCoroutine { cont ->
+        val result = kotlinx.coroutines.withTimeoutOrNull(REWARD_TIMEOUT_MS) {
+            suspendCancellableCoroutine { cont ->
             val adNative = TTAdSdk.getAdManager().createAdNative(activity)
 
             val rewardName = when (slotKey) {
@@ -359,6 +365,8 @@ class CsjAdProvider(
                 .setRewardName(rewardName)
                 .setOrientation(TTAdConstant.VERTICAL)
                 .setAdLoadType(TTAdLoadType.LOAD)
+                .setMediationAdSlot(com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot.Builder()
+                    .setExtraObject("show_adn_load_error_detail", true).build())
                 .build()
 
             var adRef: TTRewardVideoAd? = null
@@ -464,7 +472,9 @@ class CsjAdProvider(
                     }
                 }
             })
-        }
+            } // suspendCancellableCoroutine
+        } // withTimeoutOrNull
+        return result ?: RewardResult(finished = true, errorMessage = "timeout")
     }
 
     override suspend fun showSplashAd(activity: Activity, codeId: String): Boolean {
@@ -482,9 +492,21 @@ class CsjAdProvider(
             }
 
             val dm = activity.resources.displayMetrics
+            val screenWidthPx = dm.widthPixels
+            val screenHeightPx = dm.heightPixels
+            val screenWidthDp = screenWidthPx / dm.density
+            val screenHeightDp = screenHeightPx / dm.density
+            // 开屏广告 imageAcceptedSize：宽=屏幕宽，高≥75%屏幕高（GroMore 要求）
+            val minHeightPx = (screenHeightPx * 0.75).toInt()
             val adSlot = AdSlot.Builder()
                 .setCodeId(codeId)
-                .setExpressViewAcceptedSize(dm.widthPixels / dm.density, dm.heightPixels / dm.density)
+                .setImageAcceptedSize(screenWidthPx, minHeightPx)
+                .setExpressViewAcceptedSize(screenWidthDp, screenHeightDp)
+                .setMediationAdSlot(
+                    com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot.Builder()
+                        .setExtraObject("show_adn_load_error_detail", true) // 开启详细错误
+                        .build()
+                )
                 .build()
 
             val adNative = TTAdSdk.getAdManager().createAdNative(activity)
@@ -544,6 +566,7 @@ class CsjAdProvider(
 
     companion object {
         private const val SPLASH_TIMEOUT_MS = 5000
+        private const val REWARD_TIMEOUT_MS = 30_000L
         private const val TAG = "CsjAdProvider"
     }
 }
