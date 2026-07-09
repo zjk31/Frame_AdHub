@@ -12,6 +12,7 @@ import com.example.adhub.domain.model.AdChannel
 import com.example.adhub.domain.provider.AdProvider
 import com.example.adhub.domain.repository.AdChannelRepository
 import com.example.adhub.domain.repository.AdConfigRepository
+import org.koin.androidx.viewmodel.dsl.viewModel
 import org.koin.dsl.module
 
 val adModule = module {
@@ -31,11 +32,16 @@ val adModule = module {
 
     // ── 核心管理器 ──
     single { AdSdkManager(get(), get(), get()) }
+    single { com.example.adhub.core.HotStartInterstitialManager(get(), get(), get()) }
+    single { com.example.adhub.core.PureModeManager(get()) }
 
     // ── Repository ──
     single<AdConfigRepository> { AdConfigRepositoryImpl(get()) }
 
     // ── ViewModel ──
-    viewModel { com.example.adhub.ui.screens.banner.BannerViewModel(get(), get()) }
-    viewModel { com.example.adhub.ui.screens.splash.SplashViewModel(get(), get()) }
+    viewModel { com.example.adhub.ui.screens.banner.BannerViewModel(get(), get(), get()) }
+    viewModel { com.example.adhub.ui.screens.splash.SplashViewModel(get(), get(), get()) }
+    viewModel { com.example.adhub.ui.screens.reward.RewardViewModel(get(), get(), get()) }
+    viewModel { com.example.adhub.ui.screens.interstitial.InterstitialViewModel(get(), get(), get()) }
+    viewModel { com.example.adhub.ui.screens.feed.FeedViewModel(get(), get(), get()) }
 }
