@@ -2,23 +2,38 @@ package com.example.adhub.di
 
 import com.example.adhub.data.AdSdkManager
 import com.example.adhub.data.local.AdChannelStore
+import com.example.adhub.data.local.TokenStore
 import com.example.adhub.data.provider.baidu.BaiduAdProvider
 import com.example.adhub.data.provider.csj.CsjAdProvider
 import com.example.adhub.data.provider.gdt.GdtAdProvider
 import com.example.adhub.data.provider.umeng.UmengAdProvider
+import com.example.adhub.data.remote.AuthApi
 import com.example.adhub.data.remote.RemoteConfigApi
 import com.example.adhub.data.repository.AdConfigRepositoryImpl
+import com.example.adhub.core.network.AuthInterceptor
+import com.example.adhub.core.network.NetworkClient
+import com.example.adhub.core.network.TokenAuthenticator
 import com.example.adhub.domain.model.AdChannel
 import com.example.adhub.domain.provider.AdProvider
 import com.example.adhub.domain.repository.AdChannelRepository
 import com.example.adhub.domain.repository.AdConfigRepository
+import com.example.adhub.domain.repository.TokenRepository
 import org.koin.androidx.viewmodel.dsl.viewModel
 import org.koin.dsl.module
 
 val adModule = module {
-    // ── 数据源 ──
+    // ── 本地存储 ──
     single<AdChannelRepository> { AdChannelStore(get()) }
-    single<RemoteConfigApi> { com.example.adhub.core.network.NetworkClient.createService() }
+    single<TokenRepository> { TokenStore(get()) }
+
+    // ── 网络层 ──
+    single { AuthInterceptor(get()) }
+    single { TokenAuthenticator(get(), get()) }
+    single { NetworkClient(get(), get()) }
+
+    // ── API 服务 ──
+    single<RemoteConfigApi> { get<NetworkClient>().createService() }
+    single<AuthApi> { get<NetworkClient>().createService() }
 
     // ── AdProvider 四通道实现 ──
     single<Map<AdChannel, AdProvider>> {
