@@ -1,6 +1,6 @@
 package com.example.adhub.core.network
 
-import com.example.adhub.data.local.TokenStore
+import com.example.adhub.domain.repository.TokenRepository
 import com.example.adhub.data.remote.AuthApi
 import com.example.adhub.data.remote.dto.RefreshRequest
 import kotlinx.coroutines.Dispatchers
@@ -19,7 +19,7 @@ import okhttp3.Route
  * - 刷新失败（网络异常 / refreshToken 过期）则清除凭证
  */
 class TokenAuthenticator(
-    private val tokenStore: TokenStore,
+    private val tokenRepo: TokenRepository,
     private val authApi: AuthApi,
 ) : Authenticator {
 
@@ -30,13 +30,13 @@ class TokenAuthenticator(
         // 防无限重试：检查已重试次数
         val retryCount = response.request.header(HEADER_RETRY_COUNT)?.toIntOrNull() ?: 0
         if (retryCount >= MAX_RETRY_COUNT) {
-            runBlocking(Dispatchers.IO) { tokenStore.clearTokens() }
+            runBlocking(Dispatchers.IO) { tokenRepo.clearTokens() }
             return null
         }
 
-        val refreshToken = tokenStore.cachedRefreshToken
+        val refreshToken = tokenRepo.cachedRefreshToken
         if (refreshToken.isNullOrBlank()) {
-            runBlocking(Dispatchers.IO) { tokenStore.clearTokens() }
+            runBlocking(Dispatchers.IO) { tokenRepo.clearTokens() }
             return null
         }
 
@@ -49,10 +49,10 @@ class TokenAuthenticator(
                 val tokenData = refreshResult.data
                 // 更新 access token；refreshToken 也同步更新（服务端可能轮换）
                 runBlocking(Dispatchers.IO) {
-                    tokenStore.updateAccessToken(tokenData.accessToken)
+                    tokenRepo.updateAccessToken(tokenData.accessToken)
                     // 如果服务端返回了新的 refreshToken，也一并更新
                     if (tokenData.refreshToken.isNotBlank()) {
-                        tokenStore.saveTokens(
+                        tokenRepo.saveTokens(
                             accessToken = tokenData.accessToken,
                             refreshToken = tokenData.refreshToken,
                             userId = tokenData.userId,
@@ -66,11 +66,11 @@ class TokenAuthenticator(
                     .header(HEADER_RETRY_COUNT, "${retryCount + 1}")
                     .build()
             } else {
-                runBlocking(Dispatchers.IO) { tokenStore.clearTokens() }
+                runBlocking(Dispatchers.IO) { tokenRepo.clearTokens() }
                 null
             }
         } catch (e: Exception) {
-            runBlocking(Dispatchers.IO) { tokenStore.clearTokens() }
+            runBlocking(Dispatchers.IO) { tokenRepo.clearTokens() }
             null
         }
     }

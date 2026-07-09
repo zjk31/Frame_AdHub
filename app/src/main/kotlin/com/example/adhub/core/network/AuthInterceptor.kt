@@ -1,6 +1,6 @@
 package com.example.adhub.core.network
 
-import com.example.adhub.data.local.TokenStore
+import com.example.adhub.domain.repository.TokenRepository
 import okhttp3.Interceptor
 import okhttp3.Response
 
@@ -10,7 +10,7 @@ import okhttp3.Response
  * 对登录和刷新端点跳过注入（这些端点不需要 token，发送过期 token 可能导致意外行为）。
  */
 class AuthInterceptor(
-    private val tokenStore: TokenStore,
+    private val tokenRepo: TokenRepository,
 ) : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
@@ -22,7 +22,7 @@ class AuthInterceptor(
             return chain.proceed(originalRequest)
         }
 
-        val token = tokenStore.cachedToken
+        val token = tokenRepo.cachedToken
         if (token.isNullOrBlank()) {
             return chain.proceed(originalRequest)
         }
