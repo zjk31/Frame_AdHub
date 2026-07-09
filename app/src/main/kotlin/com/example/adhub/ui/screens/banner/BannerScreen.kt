@@ -69,6 +69,11 @@ fun BannerScreen(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
+            // 纯净模式提示
+            if (state.pureModeActive) {
+                PureModeBanner()
+            }
+
             // 广告区域
             Box(
                 modifier = Modifier
@@ -77,6 +82,7 @@ fun BannerScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 when (val ad = state.adState) {
+                    is AdLoadState.Idle -> {}
                     is AdLoadState.Loading -> {
                         CircularProgressIndicator(modifier = Modifier.padding(32.dp))
                     }
@@ -104,4 +110,22 @@ private fun BannerAdView(adView: View) {
             .fillMaxWidth()
             .wrapContentHeight(),
     )
+}
+
+@Composable
+private fun PureModeBanner() {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+        ),
+    ) {
+        Text(
+            "✨ 纯净模式已激活，广告已屏蔽",
+            modifier = Modifier.padding(16.dp),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
 }

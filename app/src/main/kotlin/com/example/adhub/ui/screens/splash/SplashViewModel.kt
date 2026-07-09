@@ -4,6 +4,7 @@ import android.app.Activity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.adhub.data.AdSdkManager
+import com.example.adhub.core.PureModeManager
 import com.example.adhub.domain.model.AdPlacement
 import com.example.adhub.domain.repository.AdConfigRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,16 +17,19 @@ data class SplashUiState(
     val codeId: String = "",
     val isShowing: Boolean = false,
     val result: SplashResult? = null,
+    val pureModeActive: Boolean = false,
 )
 
 sealed class SplashResult {
     data object Success : SplashResult()
     data class Failed(val message: String) : SplashResult()
+    data object Skipped : SplashResult()  // 纯净模式跳过
 }
 
 class SplashViewModel(
     private val adSdkManager: AdSdkManager,
     private val adConfigRepo: AdConfigRepository,
+    private val pureModeManager: PureModeManager,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SplashUiState())
@@ -44,6 +48,17 @@ class SplashViewModel(
 
     fun showSplash(activity: Activity) {
         if (_uiState.value.isShowing) return
+
+        // 纯净模式拦截：不展示开屏广告
+        if (pureModeManager.checkActive()) {
+            _uiState.value = _uiState.value.copy(
+                isShowing = false,
+                result = SplashResult.Skipped,
+                pureModeActive = true,
+            )
+            return
+        }
+
         viewModelScope.launch {
             val codeId = adConfigRepo.getCodeId(AdPlacement.Splash)
             val provider = adSdkManager.currentProvider

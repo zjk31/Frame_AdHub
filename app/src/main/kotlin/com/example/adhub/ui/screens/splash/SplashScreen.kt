@@ -98,6 +98,20 @@ fun SplashScreen(
                         )
                     }
                 }
+                is SplashResult.Skipped -> {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        ),
+                    ) {
+                        Text(
+                            "✨ 纯净模式已激活，开屏广告已屏蔽",
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                }
                 is SplashResult.Failed -> {
                     Card(
                         modifier = Modifier.fillMaxWidth(),

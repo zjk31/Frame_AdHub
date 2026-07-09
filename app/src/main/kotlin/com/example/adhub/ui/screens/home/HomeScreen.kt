@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
@@ -18,6 +19,8 @@ fun HomeScreen(
     onInterstitialClick: () -> Unit,
     onRewardClick: (slotKey: String) -> Unit,
     onSplashClick: () -> Unit,
+    pureModeActive: Boolean = false,
+    pureModeRemainingMs: Long = 0L,
 ) {
     Scaffold(
         topBar = {
@@ -34,6 +37,25 @@ fun HomeScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // 纯净模式状态卡片
+            if (pureModeActive) {
+                val remainingMin = pureModeRemainingMs / 60000
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    ),
+                ) {
+                    ListItem(
+                        headlineContent = { Text("纯净模式已激活") },
+                        supportingContent = { Text("剩余免广告时间: ${remainingMin} 分钟") },
+                        leadingContent = {
+                            Icon(Icons.Default.Star, contentDescription = null)
+                        },
+                    )
+                }
+            }
+
             AdFeatureCard(
                 title = "开屏广告",
                 subtitle = "Splash Ad",
