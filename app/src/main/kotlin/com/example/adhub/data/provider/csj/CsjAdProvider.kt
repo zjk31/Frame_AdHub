@@ -15,13 +15,16 @@ import com.bytedance.sdk.openadsdk.TTAdConstant
 import com.bytedance.sdk.openadsdk.TTAdLoadType
 import com.bytedance.sdk.openadsdk.TTAdNative
 import com.bytedance.sdk.openadsdk.TTAdSdk
+import com.bytedance.sdk.openadsdk.TTCustomController
 import com.bytedance.sdk.openadsdk.TTNativeExpressAd
 import com.bytedance.sdk.openadsdk.TTRewardVideoAd
+import com.bytedance.sdk.openadsdk.mediation.init.MediationPrivacyConfig
 import com.example.adhub.core.AppContextHolder
 import com.example.adhub.domain.model.AdLoadState
 import com.example.adhub.domain.model.RewardResult
 import com.example.adhub.domain.provider.AdProvider
 import com.bytedance.sdk.openadsdk.TTFullScreenVideoAd
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -31,33 +34,137 @@ class CsjAdProvider(
     private val tokenRepo: com.example.adhub.domain.repository.TokenRepository,
 ) : AdProvider {
 
+    // ── 状态标志（对齐 flutter_merge CsjAdSdkManager） ──
+
+    @Volatile private var initialized = false
+    @Volatile private var starting = false
+    @Volatile private var started = false
+
+    // ── 公开初始化入口 ──
+
     override suspend fun initialize(context: Context): Result<Unit> {
-        return try {
-            // 穿山甲 SDK 初始化
-            // 参考: https://www.csjplatform.com/support/developers
-            TTAdSdk.init(context, TTAdConfig.Builder()
-                .appId(CsjConfig.APP_ID)
-                .appName(context.getString(android.R.string.unknownName))
-                .titleBarTheme(TTAdConstant.TITLE_BAR_THEME_LIGHT)
-                .allowShowNotify(true)
-                .debug(false)
-                .supportMultiProcess(false)
-                .build()
-            )
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
+        initIfNeeded(context)
+        return ensureReady()
+    }
+
+    // ── 第一步：TTAdSdk.init（同步，只调一次） ──
+
+    private fun initIfNeeded(context: Context) {
+        if (initialized) return
+        val config = TTAdConfig.Builder()
+            .appId(CsjConfig.APP_ID)
+            .appName("Frame_AdHub")
+            .useMediation(true)
+            .debug(true)
+            .supportMultiProcess(false)
+            .customController(object : TTCustomController() {
+                override fun isCanUseLocation(): Boolean = true
+                override fun isCanUsePhoneState(): Boolean = true
+                override fun isCanUseWifiState(): Boolean = true
+                override fun isCanUseWriteExternal(): Boolean = true
+                override fun isCanUseAndroidId(): Boolean = true
+                override fun alist(): Boolean = false
+                override fun getMediationPrivacyConfig(): MediationPrivacyConfig {
+                    return object : MediationPrivacyConfig() {
+                        override fun isLimitPersonalAds(): Boolean = false
+                        override fun isProgrammaticRecommend(): Boolean = true
+                    }
+                }
+            })
+            .build()
+        val initResult = TTAdSdk.init(context.applicationContext, config)
+        android.util.Log.i("CsjAdProvider", "TTAdSdk.init result=$initResult appId=${CsjConfig.APP_ID} isSdkReady=${TTAdSdk.isSdkReady()}")
+        // 若 SDK 已被 ContentProvider 初始化，尝试 updateAdConfig 强制覆盖
+        if (!initResult || !TTAdSdk.isSdkReady()) {
+            TTAdSdk.updateAdConfig(config)
+            android.util.Log.i("CsjAdProvider", "TTAdSdk.updateAdConfig called, isSdkReady=${TTAdSdk.isSdkReady()}")
+        }
+        initialized = true
+    }
+
+    // ── 第二步：ensureReady（start + 轮询 + 线程安全，对齐 flutter_merge） ──
+
+    private suspend fun ensureReady(): Result<Unit> {
+        // 已就绪 → 直接返回
+        if (started && isReady()) {
+            return Result.success(Unit)
+        }
+        // 正在启动中 → 加入等待
+        synchronized(this) {
+            if (starting) {
+                return@synchronized // 走外部 suspendCancellableCoroutine 轮询
+            }
+            if (started && isReady()) {
+                return Result.success(Unit)
+            }
+            starting = true
+        }
+
+        return suspendCancellableCoroutine { cont ->
+            TTAdSdk.start(object : TTAdSdk.Callback {
+                override fun success() {
+                    synchronized(this@CsjAdProvider) {
+                        started = true
+                        starting = false
+                    }
+                    if (cont.isActive) waitForSdkReady(cont, 0)
+                }
+                override fun fail(code: Int, msg: String) {
+                    synchronized(this@CsjAdProvider) {
+                        started = false
+                        starting = false
+                    }
+                    if (cont.isActive) {
+                        cont.resume(Result.failure(Exception("CSJ start failed[$code]: $msg")))
+                    }
+                }
+            })
         }
     }
 
+    // ── SDK 状态检查 ──
+
     override fun isReady(): Boolean {
         return try {
-            TTAdSdk.isInitSuccess()
+            TTAdSdk.isSdkReady()
         } catch (_: Exception) { false }
     }
 
+    // ── 轮询 isSdkReady（对齐 flutter_merge waitForReady：20 次×120ms = 2.4s） ──
+
+    private fun waitForSdkReady(
+        cont: kotlinx.coroutines.CancellableContinuation<Result<Unit>>,
+        tries: Int,
+    ) {
+        if (isReady()) {
+            synchronized(this@CsjAdProvider) {
+                started = true
+                starting = false
+            }
+            if (cont.isActive) cont.resume(Result.success(Unit))
+            return
+        }
+        if (tries >= 20) {
+            synchronized(this@CsjAdProvider) {
+                starting = false
+            }
+            if (cont.isActive) {
+                cont.resume(Result.failure(Exception("CSJ SDK ready timeout after start")))
+            }
+            return
+        }
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            if (cont.isActive) waitForSdkReady(cont, tries + 1)
+        }, 120)
+    }
+
     override fun revokePrivacyConsent(context: Context) {
-        // 穿山甲隐私合规：通过重新初始化清除用户数据
+        // 对齐 flutter_merge：重置所有状态标志
+        synchronized(this) {
+            initialized = false
+            starting = false
+            started = false
+        }
     }
 
     override fun loadBanner(codeId: String): StateFlow<AdLoadState<View>> {

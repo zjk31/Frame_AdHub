@@ -30,6 +30,22 @@
             </intent-filter>
         </activity>
 
+        <!-- 穿山甲 SDK 必需：FileProvider + APP_ID（meta-data） -->
+        <provider
+            android:name="com.bytedance.sdk.openadsdk.TTFileProvider"
+            android:authorities="${applicationId}.TTFileProvider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- 穿山甲 APP_ID，SDK 的 ContentProvider 自动读取 -->
+        <meta-data
+            android:name="com.bytedance.sdk.openadsdk.APP_ID"
+            android:value="5850778" />
+
     </application>
 
 </manifest>

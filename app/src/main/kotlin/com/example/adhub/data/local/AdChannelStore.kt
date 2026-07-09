@@ -27,7 +27,7 @@ class AdChannelStore(context: Context) : AdChannelRepository {
     }
 
     private fun loadFromPrefs(): AdChannel {
-        val code = prefs.getInt(KEY_AD_CHANNEL, AdChannel.Umeng.code)
+        val code = prefs.getInt(KEY_AD_CHANNEL, AdChannel.Csj.code)
         return AdChannel.fromCode(code)
     }
 
