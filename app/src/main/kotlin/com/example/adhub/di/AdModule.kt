@@ -39,9 +39,9 @@ val adModule = module {
     single<Map<AdChannel, AdProvider>> {
         mapOf(
             AdChannel.Umeng to UmengAdProvider(),
-            AdChannel.Csj   to CsjAdProvider(),
+            AdChannel.Csj   to CsjAdProvider(get()),
             AdChannel.Gdt   to GdtAdProvider(),
-            AdChannel.Baidu to BaiduAdProvider(),
+            AdChannel.Baidu to BaiduAdProvider(get()),
         )
     }
 

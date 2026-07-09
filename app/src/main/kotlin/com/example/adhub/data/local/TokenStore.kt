@@ -29,6 +29,9 @@ class TokenStore(context: Context) : TokenRepository {
     override val cachedRefreshToken: String?
         get() = prefs.getString(KEY_REFRESH_TOKEN, null)
 
+    override val cachedUserId: Int?
+        get() = prefs.getInt(KEY_USER_ID, -1).takeIf { it >= 0 }
+
     override val isLoggedIn: Boolean
         get() = _authState.value is AuthState.LoggedIn
 

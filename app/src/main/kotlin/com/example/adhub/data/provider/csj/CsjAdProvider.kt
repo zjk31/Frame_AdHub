@@ -27,7 +27,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
-class CsjAdProvider : AdProvider {
+class CsjAdProvider(
+    private val tokenRepo: com.example.adhub.domain.repository.TokenRepository,
+) : AdProvider {
 
     override suspend fun initialize(context: Context): Result<Unit> {
         return try {
@@ -246,7 +248,7 @@ class CsjAdProvider : AdProvider {
 
             val adSlot = AdSlot.Builder()
                 .setCodeId(codeId)
-                .setUserID("")           // TODO: 接入用户体系后填入 userId
+                .setUserID(tokenRepo.cachedUserId?.toString() ?: "")
                 .setRewardName(rewardName)
                 .setOrientation(TTAdConstant.VERTICAL)
                 .setAdLoadType(TTAdLoadType.LOAD)

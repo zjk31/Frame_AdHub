@@ -19,6 +19,9 @@ interface TokenRepository {
     /** 当前缓存的 refresh token（同步，供 TokenAuthenticator 使用）。 */
     val cachedRefreshToken: String?
 
+    /** 当前登录用户的 ID（同步，供 AdProvider 使用）。 */
+    val cachedUserId: Int?
+
     /** 响应式认证状态流。 */
     val authState: Flow<AuthState>
 

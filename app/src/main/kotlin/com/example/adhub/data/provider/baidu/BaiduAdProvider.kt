@@ -24,7 +24,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
-class BaiduAdProvider : AdProvider {
+class BaiduAdProvider(
+    private val tokenRepo: com.example.adhub.domain.repository.TokenRepository,
+) : AdProvider {
 
     override suspend fun initialize(context: Context): Result<Unit> {
         return Result.success(Unit)
@@ -326,7 +328,7 @@ class BaiduAdProvider : AdProvider {
             // true = 竜屏
             val ad = RewardVideoAd(activity, codeId, listener, true)
             adRef = ad
-            ad.setUserId("")  // TODO: 接入用户体系后填入 userId
+            ad.setUserId(tokenRepo.cachedUserId?.toString() ?: "")
             ad.load()
         }
     }
