@@ -1,5 +1,6 @@
 package com.example.adhub.data
 
+import com.example.adhub.core.AppContextHolder
 import com.example.adhub.data.remote.RemoteConfigApi
 import com.example.adhub.domain.model.AdChannel
 import com.example.adhub.domain.provider.AdProvider
@@ -24,7 +25,9 @@ class AdSdkManager(
         get() = providerMap[currentChannel]
             ?: error("No AdProvider registered for channel $currentChannel")
 
-    // ── 通道切换 ──
+    // ── 通道切换（带同步锁防止竞态） ──
+
+    private val lock = Any()
 
     /**
      * 从远程 API 拉取 [AdChannel]，与本地缓存对比；若不同则更新并返回 true。
@@ -35,14 +38,32 @@ class AdSdkManager(
             val response = remoteConfigApi.getGlobalSetting()
             val adType = response.data?.adType ?: return Result.success(false)
             val remoteChannel = AdChannel.fromCode(adType)
-            val changed = remoteChannel != channelRepo.cachedChannel
+
+            // 比较-写入操作在锁内保证原子性
+            val changed = synchronized(lock) {
+                val current = channelRepo.cachedChannel
+                val isChanged = remoteChannel != current
+                isChanged
+            }
             if (changed) {
                 channelRepo.updateChannel(remoteChannel)
             }
+
             Result.success(changed)
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    // ── 通道切换（按需） ──
+
+    /**
+     * 手动切换到指定通道（不依赖远程配置）。
+     * 用于测试页面或本地设置。
+     */
+    suspend fun switchChannel(channel: AdChannel) {
+        synchronized(lock) { /* 获取锁确保与 refreshRemoteChannel 的并发安全 */ }
+        channelRepo.updateChannel(channel)
     }
 
     // ── 初始化 ──
