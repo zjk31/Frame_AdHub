@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <external-path name="gdt_external" path="." />
+    <files-path name="gdt_files" path="." />
+    <cache-path name="gdt_cache" path="." />
+</paths>

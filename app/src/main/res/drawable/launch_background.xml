@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 系统启动页背景（日间）：与 SplashScreen composable 背景一致 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 背景色：对齐 LightColors.background #FFF5F5F5 -->
+    <item>
+        <color android:color="#FFF5F5F5"/>
+    </item>
+    <!-- App 图标居中 -->
+    <item android:gravity="center">
+        <bitmap
+            android:src="@mipmap/ic_launcher"
+            android:mipMap="true"
+            android:gravity="center"/>
+    </item>
+</layer-list>

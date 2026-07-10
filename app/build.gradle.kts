@@ -7,11 +7,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.adhub"
+    namespace = "cn.android.adhub"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.adhub"
+        applicationId = "cn.android.adhub"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
@@ -72,6 +72,9 @@ dependencies {
 
     // Material Design (View-based, required by ad SDKs)
     implementation(libs.material)
+    // 穿山甲 SDK 需要旧 support 库（对齐 flutter_merge）—— Jetifier 仅转换字节码，SDK 内部可能直接依赖
+    implementation("com.android.support:recyclerview-v7:28.0.0")
+    implementation("com.android.support:support-v4:28.0.0")
 
     // ── Compose BOM ──
     implementation(platform(libs.compose.bom))
