@@ -20,6 +20,8 @@ import cn.android.adhub.domain.model.AdLoadState
 import cn.android.adhub.domain.model.RewardResult
 import cn.android.adhub.domain.provider.AdProvider
 import com.bytedance.sdk.openadsdk.TTFullScreenVideoAd
+import com.bytedance.sdk.openadsdk.TTFeedAd
+import com.bytedance.sdk.openadsdk.TTNativeAd
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withTimeoutOrNull
@@ -148,101 +150,159 @@ class CsjAdProvider(
         val state = MutableStateFlow<AdLoadState<View>>(AdLoadState.Loading)
         val ctx = AppContextHolder.context
         val density = ctx.resources.displayMetrics.density
-        val screenWidthPx = ctx.resources.displayMetrics.widthPixels
-        val widthDp = screenWidthPx / density
 
-        val adSlot = AdSlot.Builder()
-            .setCodeId(codeId)
-            .setImageAcceptedSize(screenWidthPx, (75f * density).toInt())
-            .setExpressViewAcceptedSize(widthDp, 75f) // 75dp 标准横幅高度
-            .build()
+        // 容器：对齐 flutter_merge MATCH_PARENT x MATCH_PARENT + clipChildren
+        val container = FrameLayout(ctx).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
+            setPadding(0, 0, 0, 0)
+            setClipChildren(true)
+            setClipToPadding(true)
+        }
+        state.value = AdLoadState.Loaded(container)
 
-        android.util.Log.e(TAG, "Banner load start: codeId=$codeId")
-        val adNative = TTAdSdk.getAdManager().createAdNative(ctx)
-        adNative.loadBannerExpressAd(adSlot, object : TTAdNative.NativeExpressAdListener {
-            override fun onError(errorCode: Int, errorMsg: String) {
-                android.util.Log.e(TAG, "Banner onError[$errorCode]: $errorMsg")
-                state.value = AdLoadState.Error("CSJ Banner error[$errorCode]: $errorMsg")
-            }
+        // 等容器测量后再加载广告，避免宽高为 0
+        container.post {
+            val cw = container.width
+            val ch = container.height
+            val wPx = if (cw > 0) cw else ctx.resources.displayMetrics.widthPixels
+            val hPx = Math.max(1, Math.round((if (ch > 0) ch / density else 75f) * density))
+            val widthDp = wPx / density
+            val heightDp = hPx.toFloat() / density
 
-            override fun onNativeExpressAdLoad(ads: MutableList<TTNativeExpressAd>?) {
-                if (ads.isNullOrEmpty()) {
-                    state.value = AdLoadState.Error("CSJ Banner: 无广告返回")
-                    return
+            val adSlot = AdSlot.Builder()
+                .setCodeId(codeId)
+                .setImageAcceptedSize(wPx, hPx)
+                .setExpressViewAcceptedSize(widthDp, heightDp)
+                .setMediationAdSlot(
+                    com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot.Builder()
+                        .setExtraObject("show_adn_load_error_detail", true)
+                        .build()
+                )
+                .build()
+
+            android.util.Log.e(TAG, "Banner load: codeId=$codeId cw=$cw ch=$ch wDp=$widthDp hDp=$heightDp")
+            val adNative = TTAdSdk.getAdManager().createAdNative(ctx)
+            adNative.loadBannerExpressAd(adSlot, object : TTAdNative.NativeExpressAdListener {
+                override fun onError(errorCode: Int, errorMsg: String) {
+                    android.util.Log.e(TAG, "Banner onError[$errorCode]: $errorMsg")
+                    state.value = AdLoadState.Error("CSJ Banner error[$errorCode]: $errorMsg")
                 }
-                val ad = ads[0]
-                ad.setExpressInteractionListener(object : TTNativeExpressAd.ExpressAdInteractionListener {
-                    override fun onAdClicked(view: View?, i: Int) {}
-                    override fun onAdShow(view: View?, i: Int) {}
-                    override fun onRenderFail(view: View?, msg: String?, code: Int) {
-                        state.value = AdLoadState.Error("CSJ render fail: $msg")
+
+                override fun onNativeExpressAdLoad(ads: MutableList<TTNativeExpressAd>?) {
+                    if (ads.isNullOrEmpty()) {
+                        state.value = AdLoadState.Error("CSJ Banner: 无广告返回")
+                        return
                     }
-                    override fun onRenderSuccess(view: View?, width: Float, height: Float) {
-                        val renderView = view ?: ad.expressAdView
-                        if (renderView != null) {
-                            val container = buildContainer(ctx, renderView, width, height)
-                            state.value = AdLoadState.Loaded(container)
-                        } else {
-                            state.value = AdLoadState.Error("CSJ render view is null")
+                    val ad = ads[0]
+                    ad.setExpressInteractionListener(object : TTNativeExpressAd.ExpressAdInteractionListener {
+                        override fun onAdClicked(view: View?, i: Int) {}
+                        override fun onAdShow(view: View?, i: Int) {}
+                        override fun onRenderFail(view: View?, msg: String?, code: Int) {
+                            android.util.Log.e(TAG, "Banner onRenderFail: msg=$msg code=$code")
                         }
-                    }
-                })
-                ad.render()
-            }
-        })
+                        override fun onRenderSuccess(view: View?, width: Float, height: Float) {
+                            val renderView = view ?: ad.expressAdView
+                            if (renderView == null) return
+                            renderView.setPadding(0, 0, 0, 0)
+                            container.post {
+                                container.removeAllViews()
+                                val rw = if (width > 0f) width.toInt() else 0
+                                val rh = if (height > 0f) height.toInt() else 0
+                                val lp = when {
+                                    cw > 0 && ch > 0 && rw > 0 && rh > 0 && (rw > cw || rh > ch) -> {
+                                        val scale = minOf(cw.toFloat() / rw, ch.toFloat() / rh)
+                                        FrameLayout.LayoutParams(
+                                            maxOf(1, (rw * scale).toInt()),
+                                            maxOf(1, (rh * scale).toInt()),
+                                            Gravity.CENTER,
+                                        )
+                                    }
+                                    rw > 0 && rh > 0 && cw > 0 && ch > 0 ->
+                                        FrameLayout.LayoutParams(rw, rh, Gravity.CENTER)
+                                    else -> FrameLayout.LayoutParams(
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                    )
+                                }
+                                container.addView(renderView, lp)
+                            }
+                        }
+                    })
+                    ad.render()
+                }
+            })
+        }
         return state
     }
-
     override fun loadFeed(codeId: String, count: Int): StateFlow<AdLoadState<List<View>>> {
         val state = MutableStateFlow<AdLoadState<List<View>>>(AdLoadState.Loading)
         val ctx = AppContextHolder.context
 
-        val adSlot = AdSlot.Builder()
-            .setCodeId(codeId)
-            .setImageAcceptedSize(ctx.resources.displayMetrics.widthPixels, 0)
-            .setAdCount(count.coerceAtLeast(1))
-            .setAdLoadType(TTAdLoadType.LOAD)
-            .setMediationAdSlot(com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot.Builder()
-                .setExtraObject("show_adn_load_error_detail", true).build())
-            .build()
+        val density = ctx.resources.displayMetrics.density
+        // 对齐 flutter_merge: rootView 始终在视图树，先返回容器让 Compose 挂载
+        val container = FrameLayout(ctx).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                (420f * density).toInt(),  // 固定高度 420dp
+            )
+            setPadding(0, 0, 0, 0)
+            setClipChildren(true)
+            setClipToPadding(true)
+        }
+        // 立即把容器发出去，Compose AndroidView 才能挂载它
+        state.value = AdLoadState.Loaded(listOf(container))
 
-        val adNative = TTAdSdk.getAdManager().createAdNative(ctx)
-        adNative.loadFeedAd(adSlot, object : TTAdNative.FeedAdListener {
-            override fun onError(errorCode: Int, errorMsg: String?) {
-                state.value = AdLoadState.Error("CSJ Feed error[$errorCode]: $errorMsg")
-            }
+        // container.post: 挂载后执行加载，此时 container.width 有值
+        container.post {
+            val screenW = if (container.width > 0) container.width
+                else ctx.resources.displayMetrics.widthPixels
+            val adSlot = AdSlot.Builder()
+                .setCodeId(codeId)
+                .setImageAcceptedSize(Math.max(1, screenW), 0)
+                .setAdCount(3)
+                .setMediationAdSlot(
+                    com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot.Builder()
+                        .setMuted(false)
+                        .build()
+                )
+                .build()
 
-            override fun onFeedAdLoad(list: MutableList<com.bytedance.sdk.openadsdk.TTFeedAd>?) {
-                if (list.isNullOrEmpty()) {
-                    state.value = AdLoadState.Error("CSJ Feed: 无广告返回")
-                    return
+            android.util.Log.e(TAG, "Feed load: codeId=$codeId sw=$screenW")
+            val adNative = TTAdSdk.getAdManager().createAdNative(ctx)
+            adNative.loadFeedAd(adSlot, object : TTAdNative.FeedAdListener {
+                override fun onError(errorCode: Int, errorMsg: String?) {
+                    android.util.Log.e(TAG, "Feed onError[$errorCode]: $errorMsg")
+                    state.value = AdLoadState.Error("CSJ Feed error[$errorCode]: $errorMsg")
                 }
-                val views = mutableListOf<View>()
-                for (ad in list) {
-                    val adView = ad.adView ?: continue
-                    if (adView.parent is ViewGroup) {
-                        (adView.parent as ViewGroup).removeView(adView)
+
+                override fun onFeedAdLoad(list: MutableList<TTFeedAd>?) {
+                    if (list.isNullOrEmpty()) {
+                        state.value = AdLoadState.Error("CSJ Feed: 无广告返回")
+                        return
                     }
-                    val container = FrameLayout(ctx).apply {
-                        layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT,
-                        )
-                        addView(adView, FrameLayout.LayoutParams(
-                            FrameLayout.LayoutParams.MATCH_PARENT,
-                            FrameLayout.LayoutParams.WRAP_CONTENT,
-                        ))
-                    }
-                    views.add(container)
+                    val ad = list[0]
+                    ad.setExpressRenderListener(object : TTNativeAd.ExpressRenderListener {
+                        override fun onRenderSuccess(view: View?, width: Float, height: Float, isExpress: Boolean) {
+                            val adView = ad.adView ?: view ?: return
+                            adView.setPadding(0, 0, 0, 0)
+                            container.removeAllViews()
+                            container.addView(adView, FrameLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                            ))
+                            state.value = AdLoadState.Loaded(listOf(container))
+                            android.util.Log.e(TAG, "Feed render: w=$width h=$height")
+                        }
+                    })
                     ad.render()
                 }
-                state.value = if (views.isNotEmpty()) AdLoadState.Loaded(views.toList())
-                    else AdLoadState.Error("CSJ Feed: 渲染返回空")
-            }
-        })
+            })
+        }
         return state
     }
-
     override suspend fun showInterstitial(activity: Activity, codeId: String): Boolean {
         if (activity.isFinishing || activity.isDestroyed) return false
         if (codeId.isEmpty()) return false
@@ -339,6 +399,11 @@ class CsjAdProvider(
                 .setRewardName(rewardName)
                 .setOrientation(TTAdConstant.VERTICAL)
                 .setAdLoadType(TTAdLoadType.LOAD)
+                .setMediationAdSlot(
+                    com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot.Builder()
+                        .setExtraObject("show_adn_load_error_detail", true)
+                        .build()
+                )
                 .build()
 
             var adRef: TTRewardVideoAd? = null
@@ -530,8 +595,10 @@ class CsjAdProvider(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
             val scale = ctx.resources.displayMetrics.density
-            val w = (adWidth * scale).toInt().coerceAtMost(ctx.resources.displayMetrics.widthPixels)
-            val h = (adHeight * scale).toInt()
+            val w = if (adWidth > 0f) (adWidth * scale).toInt().coerceAtMost(ctx.resources.displayMetrics.widthPixels)
+                    else ViewGroup.LayoutParams.WRAP_CONTENT
+            val h = if (adHeight > 0f) (adHeight * scale).toInt()
+                    else ViewGroup.LayoutParams.WRAP_CONTENT
             val lp = FrameLayout.LayoutParams(w, h, Gravity.CENTER)
             addView(adView, lp)
         }

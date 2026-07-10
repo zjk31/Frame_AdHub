@@ -43,7 +43,7 @@ class RewardViewModel(
         )
         viewModelScope.launch {
             val codeId = resolveCodeId(slotKey)
-            _uiState.value = _uiState.value.copy(codeId = codeId)
+            _uiState.value = _uiState.value.copy(codeId = codeId, isLoading = false)
         }
     }
 

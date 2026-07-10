@@ -62,12 +62,17 @@ class FeedViewModel(
         }
 
         _uiState.value = state.copy(isLoading = true, hasLoaded = false, errorMessage = null)
+        val codeId = state.codeId
 
         viewModelScope.launch {
+            android.util.Log.e("FeedVM", "requestFeed start: codeId=$codeId")
             // 确保 SDK 已就绪（冷启动场景）
             adSdkManager.ensureProviderReady()
+            android.util.Log.e("FeedVM", "ensureProviderReady done")
             val provider = adSdkManager.currentProvider
-            provider.loadFeed(state.codeId, 3).collect { adState ->
+            android.util.Log.e("FeedVM", "provider=${provider.javaClass.simpleName}, calling loadFeed")
+            provider.loadFeed(codeId, 3).collect { adState ->
+                android.util.Log.e("FeedVM", "Feed state: $adState")
                 when (adState) {
                     is AdLoadState.Loading -> {
                         _uiState.value = _uiState.value.copy(isLoading = true)
