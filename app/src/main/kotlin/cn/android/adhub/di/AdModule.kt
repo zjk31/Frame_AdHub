@@ -73,7 +73,7 @@ val adModule = module {
     single { cn.android.adhub.core.PureModeManager(get()) }
 
     // ── Repository ──
-    single<AdConfigRepository> { AdConfigRepositoryImpl(get()) }
+    single<AdConfigRepository> { AdConfigRepositoryImpl(get(), get()) }
 
     // ── ViewModel ──
     viewModel { cn.android.adhub.ui.screens.banner.BannerViewModel(get(), get(), get()) }

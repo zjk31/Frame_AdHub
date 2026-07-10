@@ -14,16 +14,16 @@ object CsjConfig {
     const val APP_ID = "5850778"
     const val APP_NAME = "Frame_AdHub"
 
-    /** GroMore 聚合代码位（用于瀑布流/竞价） */
-    const val SPLASH_CODE_ID = "104221504"
-    const val BANNER_CODE_ID = "104221486"
-    const val BANNER_MINI_CODE_ID = ""  // 待补充
-    const val AD_SLOT_REWARD_VIDEO = "104221400"
-    const val AD_SLOT_TASK_REWARD_VIDEO = ""  // 待补充
-    const val AD_SLOT_PURE_REWARD_VIDEO = ""  // 待补充
-    const val AD_SLOT_DOWNLOAD_QUOTA_REWARD_VIDEO = ""  // 待补充
-    const val AD_SLOT_INTERSTITIAL = "104222301"
-    const val AD_FREE_CODE_ID = "104220553"
+    /** GroMore 聚合代码位（来自后台配置） */
+    const val SPLASH_CODE_ID = "19910070"
+    const val BANNER_CODE_ID = "19910063"
+    const val BANNER_MINI_CODE_ID = "19910063"
+    const val AD_SLOT_REWARD_VIDEO = "19910071"
+    const val AD_SLOT_TASK_REWARD_VIDEO = "19910071"
+    const val AD_SLOT_PURE_REWARD_VIDEO = "19910071"
+    const val AD_SLOT_DOWNLOAD_QUOTA_REWARD_VIDEO = "19910071"
+    const val AD_SLOT_INTERSTITIAL = "19910054"
+    const val AD_FREE_CODE_ID = "19910043"
 
     // ── 开屏自定义兜底（方案二）──
     // 当 GroMore 配置拉取失败时，直接用 pangle 代码位请求广告，避免无填充。
@@ -58,31 +58,28 @@ object CsjConfig {
     }
 
     /**
-     * 创建开屏广告的自定义兜底信息，供 [MediationAdSlot.Builder.setMediationSplashRequestInfo] 使用。
-     * 返回 null 表示未配置兜底代码位，跳过自定义兜底。
+     * 创建开屏广告的瀑布流兜底信息。
+     * 对齐 flutter_merge：始终返回 MediationSplashRequestInfo（即使字段为空），
+     * 确保 GroMore 正确识别 Pangle ADN 进行瀑布流排序。
      */
-    fun buildSplashFallback(): MediationSplashRequestInfo? {
+    fun buildSplashFallback(): MediationSplashRequestInfo {
         val slotId = PANGLE_SPLASH_SLOT_ID
-        if (slotId.isBlank()) {
-            Log.w(TAG, "开屏自定义兜底未配置（PANGLE_SPLASH_SLOT_ID 为空），跳过")
-            return null
-        }
         return object : MediationSplashRequestInfo(
             com.bytedance.sdk.openadsdk.mediation.MediationConstant.ADN_PANGLE,
-            slotId,   // 穿山甲后台的代码位 ID（非聚合 ID）
-            APP_ID,    // 与 TTAdSdk.init 传入的 appId 一致
-            "",        // pangle 没有 appKey
+            slotId,
+            if (slotId.isNotBlank()) APP_ID else "",
+            "",  // pangle 没有 appKey
         ) {}
     }
 
-    /** 共享的 TTAdConfig 构建，AdHubApp 统一调用，避免配置不一致。 */
+    /** 共享的 TTAdConfig 构建，AdHubApp 统一调用，避免配置不一致。
+     * 对齐 flutter_merge：不设置 setMediationConfig（避免覆盖 GroMore 默认行为）。 */
     fun buildAdConfig(context: Context): TTAdConfig = TTAdConfig.Builder()
         .appId(APP_ID)
         .appName(APP_NAME)
         .useMediation(true)
         .debug(true)
         .supportMultiProcess(false)
-        .setMediationConfig(buildMediationConfig(context))
         .customController(object : TTCustomController() {
             override fun isCanUseLocation(): Boolean = true
             override fun isCanUsePhoneState(): Boolean = true

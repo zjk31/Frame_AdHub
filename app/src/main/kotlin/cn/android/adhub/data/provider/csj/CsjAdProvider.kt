@@ -504,19 +504,16 @@ class CsjAdProvider(
         }
     }
 
-    override suspend fun showSplashAd(activity: Activity, codeId: String): Boolean {
+    // ── 开屏广告（对齐 flutter_merge 预加载模式） ──
+    //
+    // 1. loadSplashAd → onSplashRenderSuccess 存 ad，回调 onAdLoaded（释放系统 splash）
+    // 2. 等待 container 可见后 showSplashView → onSplashAdClose → 恢复协程
+    override suspend fun showSplashAd(
+        activity: Activity, codeId: String, container: ViewGroup,
+        onAdLoaded: (() -> Unit)?, onAdShown: (() -> Unit)?,
+    ): Boolean {
         if (activity.isFinishing || activity.isDestroyed) return false
         return suspendCancellableCoroutine { cont ->
-            val container = FrameLayout(activity).apply {
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                )
-            }
-            val decorView = activity.window.decorView as? ViewGroup ?: run {
-                cont.resume(false); return@suspendCancellableCoroutine
-            }
-
             val dm = activity.resources.displayMetrics
             val screenW = dm.widthPixels
             val screenH = dm.heightPixels
@@ -524,15 +521,11 @@ class CsjAdProvider(
             val adSlot = AdSlot.Builder()
                 .setCodeId(codeId)
                 .setExpressViewAcceptedSize(screenW / dm.density, screenH / dm.density)
+                .setAdLoadType(TTAdLoadType.PRELOAD)
                 .setMediationAdSlot(
                     com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot.Builder()
-                        .apply {
-                            val fallback = CsjConfig.buildSplashFallback()
-                            if (fallback != null) {
-                                setMediationSplashRequestInfo(fallback)
-                            }
-                            setExtraObject("show_adn_load_error_detail", true)
-                        }
+                        .setMediationSplashRequestInfo(CsjConfig.buildSplashFallback())
+                        .setExtraObject("show_adn_load_error_detail", true)
                         .build()
                 )
                 .build()
@@ -540,7 +533,7 @@ class CsjAdProvider(
             val adNative = TTAdSdk.getAdManager().createAdNative(activity)
 
             cont.invokeOnCancellation {
-                try { decorView.removeView(container) } catch (_: Exception) {}
+                try { container.removeAllViews() } catch (_: Exception) {}
             }
 
             var loadSuccessReceived = false
@@ -562,25 +555,38 @@ class CsjAdProvider(
 
                 override fun onSplashRenderSuccess(ad: CSJSplashAd) {
                     if (activity.isFinishing || activity.isDestroyed || !cont.isActive) return
-                    ad.setSplashAdListener(object : CSJSplashAd.SplashAdListener {
-                        override fun onSplashAdShow(ad: CSJSplashAd) {}
 
-                        override fun onSplashAdClick(ad: CSJSplashAd) {}
+                    // ① 暂存广告引用（对齐 flutter_merge: pendingCsjSplash = ad）
+                    // ② 先回调 onAdLoaded，让调用方释放系统 splash
+                    // ③ 等容器就绪后再真正展示
+                    onAdLoaded?.invoke()
+                    android.util.Log.i(TAG, "开屏广告素材就绪，等待容器…")
 
-                        override fun onSplashAdClose(ad: CSJSplashAd, closeType: Int) {
-                            try { decorView.removeView(container) } catch (_: Exception) {}
-                            if (cont.isActive) cont.resume(true)
-                        }
-                    })
-                    decorView.post {
-                        decorView.addView(container)
+                    // 延迟一帧展示，确保系统 splash 消退不影响 CSJ 倒计时初始化
+                    container.post {
+                        if (activity.isFinishing || activity.isDestroyed || !cont.isActive) return@post
+                        android.util.Log.i(TAG, "开始展示开屏广告")
+                        container.removeAllViews()
+                        ad.setSplashAdListener(object : CSJSplashAd.SplashAdListener {
+                            override fun onSplashAdShow(ad2: CSJSplashAd) {
+                                android.util.Log.i(TAG, "开屏广告已展示")
+                                onAdShown?.invoke()
+                            }
+                            override fun onSplashAdClick(ad2: CSJSplashAd) {
+                                android.util.Log.i(TAG, "开屏广告被点击")
+                            }
+                            override fun onSplashAdClose(ad2: CSJSplashAd, closeType: Int) {
+                                android.util.Log.i(TAG, "开屏广告关闭, closeType=$closeType (1=跳过 2=倒计时结束 3=点击落地页)")
+                                try { container.removeAllViews() } catch (_: Exception) {}
+                                if (cont.isActive) cont.resume(true)
+                            }
+                        })
                         ad.showSplashView(container)
                     }
                 }
 
                 override fun onSplashRenderFail(ad: CSJSplashAd, error: CSJAdError) {
                     android.util.Log.e(TAG, "开屏渲染失败: code=${error.code}, msg=${error.msg}")
-                    try { decorView.removeView(container) } catch (_: Exception) {}
                     if (cont.isActive) cont.resume(false)
                 }
             }, SPLASH_TIMEOUT_MS)

@@ -9,12 +9,9 @@ import org.koin.android.ext.android.inject
 /**
  * 单 Activity 架构。
  *
- * 系统启动页由 [LaunchTheme]（#F5F5F5 背景 + App 图标）统一管理：
- * - API 31+：平台 SplashScreen API 自动展示，首帧渲染后淡出
- * - pre-API 31：windowBackground 方案
- *
- * 我们的 [SplashScreen] composable 渲染同一背景色，与系统启动页视觉无缝衔接，
- * 用户感知为「一次连续启动」。
+ * 冷启动由 [SplashAdActivity] 管理（系统启动页 → 广告 → 跳转本 Activity）。
+ * 本 Activity 使用 [LaunchTheme] 确保 Window 创建时立即绘制 #F5F5F5 背景，
+ * 与 Compose [AdHubTheme] 的 background 色值一致，消除 Activity 切换白屏。
  */
 class MainActivity : ComponentActivity() {
 

@@ -58,6 +58,18 @@ class AdSdkManager(
     // ── 通道切换（按需） ──
 
     /**
+     * 根据服务端下发的 adType 切换通道（对齐 flutter_merge 的 cacheRemoteAdType）。
+     * 由 [AdConfigRepository.fetchAdConfig] 调用，确保广告通道与服务端一致。
+     */
+    suspend fun applyRemoteAdType(rawAdType: Int) {
+        val remoteChannel = AdChannel.fromCode(rawAdType)
+        val current = channelRepo.cachedChannel
+        if (remoteChannel != current) {
+            channelRepo.updateChannel(remoteChannel)
+        }
+    }
+
+    /**
      * 手动切换到指定通道（不依赖远程配置）。
      * 用于测试页面或本地设置。
      */

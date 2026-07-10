@@ -23,13 +23,9 @@ class AdHubApp : Application() {
         Log.i("AdHubApp", "onCreate — 开始初始化")
         AppContextHolder.init(this)
 
-        // 0. CSJ SDK 早期初始化（为 SplashAdActivity 的 cold start 做准备）
-        try {
-            com.bytedance.sdk.openadsdk.TTAdSdk.init(this, CsjConfig.buildAdConfig(this))
-            Log.i("AdHubApp", "CSJ SDK init done")
-        } catch (e: Exception) {
-            Log.e("AdHubApp", "CSJ init failed", e)
-        }
+        // 对齐 flutter_merge：不在 Application 中提前调用 TTAdSdk.init，
+        // 统一由 CsjAdProvider.ensureReady() 在 SplashAdActivity 启动后初始化。
+        // 避免 ContentProvider + Application + Provider 三重初始化导致 SDK 状态混乱。
 
         // 1. 启动 Koin DI 容器
         startKoin {

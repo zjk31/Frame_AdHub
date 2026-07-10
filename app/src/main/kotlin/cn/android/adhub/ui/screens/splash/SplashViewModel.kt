@@ -84,7 +84,8 @@ class SplashViewModel(
 
             try {
                 val provider = adSdkManager.currentProvider
-                provider.showSplashAd(activity, codeId)
+                val container = android.widget.FrameLayout(activity)
+                provider.showSplashAd(activity, codeId, container, null, null)
                 // showSplashAd 是 suspend，返回即广告关闭
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(

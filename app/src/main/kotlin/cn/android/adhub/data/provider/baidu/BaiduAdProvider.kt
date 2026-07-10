@@ -34,6 +34,12 @@ class BaiduAdProvider(
     override suspend fun initialize(context: Context): Result<Unit> {
         if (initialized) return Result.success(Unit)
         return try {
+            // 对齐 flutter_merge: 权限配置
+            com.baidu.mobads.sdk.api.MobadsPermissionSettings.setPermissionReadDeviceID(true)
+            com.baidu.mobads.sdk.api.MobadsPermissionSettings.setPermissionAppList(false)
+            com.baidu.mobads.sdk.api.MobadsPermissionSettings.setPermissionLocation(false)
+            com.baidu.mobads.sdk.api.MobadsPermissionSettings.setPermissionStorage(false)
+
             val config = BDAdConfig.Builder()
                 .setAppsid(BaiduConfig.APP_ID)
                 .setAppName("Frame_AdHub")
@@ -92,7 +98,7 @@ class BaiduAdProvider(
 
         val nativeManager = BaiduNativeManager(ctx.applicationContext, codeId)
         nativeManager.loadExpressAd(
-            RequestParameters.Builder().build(),
+            RequestParameters.Builder().setBidFloor(10).build(),
             object : BaiduNativeManager.ExpressAdListener {
                 override fun onNativeLoad(responses: MutableList<ExpressResponse>?) {
                     if (responses.isNullOrEmpty()) {
@@ -200,6 +206,7 @@ class BaiduAdProvider(
                         state.value = AdLoadState.Loaded(listOf(container))
                     }
                 })
+                ad.render()
             }
 
             override fun onNativeFail(errorCode: Int, message: String?, r: ExpressResponse?) {
@@ -361,24 +368,18 @@ class BaiduAdProvider(
             // true = 竜屏
             val ad = RewardVideoAd(activity, codeId, listener, true)
             adRef = ad
-            ad.setUserId(tokenRepo.cachedUserId?.toString() ?: "")
+            val uid = tokenRepo.cachedUserId?.toString()
+            if (!uid.isNullOrEmpty()) ad.setUserId(uid)
             ad.load()
         }
     }
 
-    override suspend fun showSplashAd(activity: Activity, codeId: String): Boolean {
+    override suspend fun showSplashAd(
+        activity: Activity, codeId: String, container: ViewGroup,
+        onAdLoaded: (() -> Unit)?, onAdShown: (() -> Unit)?,
+    ): Boolean {
         if (activity.isFinishing || activity.isDestroyed) return false
         return suspendCancellableCoroutine { cont ->
-            val container = FrameLayout(activity).apply {
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                )
-            }
-            val decorView = activity.window.decorView as? ViewGroup ?: run {
-                cont.resume(false); return@suspendCancellableCoroutine
-            }
-
             val dm = activity.resources.displayMetrics
             val params = RequestParameters.Builder()
                 .addExtra(SplashAd.KEY_TIMEOUT, SPLASH_TIMEOUT_MS.toString())
@@ -392,49 +393,62 @@ class BaiduAdProvider(
 
             cont.invokeOnCancellation {
                 splashAd?.destroy()
-                try { decorView.removeView(container) } catch (_: Exception) {}
+                try { container.removeAllViews() } catch (_: Exception) {}
             }
 
             splashAd = SplashAd(activity, codeId, params, object : SplashInteractionListener {
                 override fun onLpClosed() {
+                    android.util.Log.i(TAG, "百度开屏 onLpClosed")
                     cleanupAndResume()
                 }
-
                 override fun onAdDismissed() {
+                    android.util.Log.i(TAG, "百度开屏 onAdDismissed")
                     cleanupAndResume()
                 }
-
                 override fun onAdSkip() {
+                    android.util.Log.i(TAG, "百度开屏 onAdSkip")
                     cleanupAndResume()
                 }
 
                 override fun onADLoaded() {
+                    android.util.Log.i(TAG, "百度开屏 onADLoaded")
                     if (activity.isFinishing || activity.isDestroyed || !cont.isActive) return
-                    decorView.post {
-                        decorView.addView(container)
+                    onAdLoaded?.invoke()
+                    container.post {
+                        container.removeAllViews()
                         splashAd?.show(container)
+                        onAdShown?.invoke()
                     }
                 }
 
-                override fun onAdExposed() {}
-                override fun onAdPresent() {}
+                override fun onAdPresent() {
+                    android.util.Log.i(TAG, "百度开屏 onAdPresent")
+                    onAdShown?.invoke()
+                }
+                override fun onAdExposed() {
+                    android.util.Log.i(TAG, "百度开屏 onAdExposed")
+                }
                 override fun onAdClick() {}
-                override fun onAdCacheSuccess() {}
-
-                override fun onAdFailed(reason: String) {
-                    if (cont.isActive) cont.resume(false)
+                override fun onAdCacheSuccess() {
+                    android.util.Log.i(TAG, "百度开屏 onAdCacheSuccess")
                 }
 
+                override fun onAdFailed(reason: String) {
+                    android.util.Log.e(TAG, "百度开屏 onAdFailed: $reason")
+                    if (cont.isActive) cont.resume(false)
+                }
                 override fun onAdCacheFailed() {
+                    android.util.Log.e(TAG, "百度开屏 onAdCacheFailed")
                     if (cont.isActive) cont.resume(false)
                 }
 
                 private fun cleanupAndResume() {
-                    try { decorView.removeView(container) } catch (_: Exception) {}
+                    try { container.removeAllViews() } catch (_: Exception) {}
                     splashAd?.destroy()
                     if (cont.isActive) cont.resume(true)
                 }
             })
+            android.util.Log.i(TAG, "百度开屏 load() 调用")
             splashAd.load()
         }
     }

@@ -318,45 +318,45 @@ class GdtAdProvider : AdProvider {
         }
     }
 
-    override suspend fun showSplashAd(activity: Activity, codeId: String): Boolean {
+    override suspend fun showSplashAd(
+        activity: Activity, codeId: String, container: ViewGroup,
+        onAdLoaded: (() -> Unit)?, onAdShown: (() -> Unit)?,
+    ): Boolean {
         if (activity.isFinishing || activity.isDestroyed) return false
         return suspendCancellableCoroutine { cont ->
-            val container = FrameLayout(activity).apply {
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                )
-            }
-            val decorView = activity.window.decorView as? ViewGroup ?: run {
-                cont.resume(false); return@suspendCancellableCoroutine
+            cont.invokeOnCancellation {
+                try { container.removeAllViews() } catch (_: Exception) {}
             }
 
             var splashAd: SplashAD? = null
 
-            cont.invokeOnCancellation {
-                try { decorView.removeView(container) } catch (_: Exception) {}
-            }
-
             splashAd = SplashAD(activity, codeId, object : SplashADListener {
-                override fun onADPresent() {}
+                override fun onADPresent() {
+                    onAdShown?.invoke()
+                }
+
                 override fun onADClicked() {}
+
                 override fun onADTick(millisUntilFinished: Long) {}
+
                 override fun onADExposure() {}
 
                 override fun onADLoaded(expireTimestamp: Long) {
                     if (activity.isFinishing || activity.isDestroyed || !cont.isActive) return
-                    decorView.post {
-                        decorView.addView(container)
+                    onAdLoaded?.invoke()
+                    container.post {
+                        container.removeAllViews()
                         splashAd?.showAd(container)
                     }
                 }
 
                 override fun onNoAD(error: AdError) {
+                    android.util.Log.e(TAG, "GDT 开屏加载失败: ${error.errorCode} ${error.errorMsg}")
                     if (cont.isActive) cont.resume(false)
                 }
 
                 override fun onADDismissed() {
-                    try { decorView.removeView(container) } catch (_: Exception) {}
+                    try { container.removeAllViews() } catch (_: Exception) {}
                     if (cont.isActive) cont.resume(true)
                 }
             }, SPLASH_TIMEOUT_MS)
