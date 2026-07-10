@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 分层布局：
+     1. ComposeView（底层）：提前渲染首页，广告结束立刻可见
+     2. splash_ad_container（顶层）：盖在 Compose 上面承载广告，广告结束设 GONE -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F5F5F5">
+
+    <!-- 首页 Compose：在 onCreate 立即开始渲染，藏广告后面 -->
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/home_compose_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- 广告容器：盖在 Compose 上面，对齐 flutter_merge 不设 background -->
+    <FrameLayout
+        android:id="@+id/splash_ad_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+</FrameLayout>

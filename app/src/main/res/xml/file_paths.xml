@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <external-path name="tt_sdk_download" path="." />
+    <files-path name="tt_sdk_files" path="." />
+    <cache-path name="tt_sdk_cache" path="." />
+</paths>

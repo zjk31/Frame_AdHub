@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 友盟 banner 原生模板布局：UMNativeLayout 内含 ImageView 供 SDK 渲染素材 -->
+<com.umeng.union.widget.UMNativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/umeng_native_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <ImageView
+        android:id="@+id/umeng_native_image"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:adjustViewBounds="true"
+        android:scaleType="fitXY" />
+
+</com.umeng.union.widget.UMNativeLayout>
