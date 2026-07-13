@@ -1,22 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 分层布局：
-     1. ComposeView（底层）：提前渲染首页，广告结束立刻可见
-     2. splash_ad_container（顶层）：盖在 Compose 上面承载广告，广告结束设 GONE -->
+<!--
+  开屏广告 Activity 布局。
+  根背景与系统启动页保持一致；广告渲染前展示品牌 loading panel。
+-->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/splash_ad_container"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#F5F5F5">
+    android:background="@color/launch_bg">
 
-    <!-- 首页 Compose：在 onCreate 立即开始渲染，藏广告后面 -->
-    <androidx.compose.ui.platform.ComposeView
-        android:id="@+id/home_compose_view"
+    <!-- 品牌 loading panel：与系统启动页视觉一致，避免切换跳变 -->
+    <LinearLayout
+        android:id="@+id/splash_loading_panel"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:background="@color/launch_bg">
 
-    <!-- 广告容器：盖在 Compose 上面，对齐 flutter_merge 不设 background -->
-    <FrameLayout
-        android:id="@+id/splash_ad_container"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        <ImageView
+            android:layout_width="108dp"
+            android:layout_height="108dp"
+            android:src="@drawable/ic_launcher_foreground"
+            android:contentDescription="@string/app_name" />
 
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/app_name"
+            android:textSize="20sp"
+            android:textColor="#FF6B35"
+            android:textStyle="bold" />
+
+        <ProgressBar
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginTop="24dp"
+            android:indeterminateTint="#FF8A65" />
+    </LinearLayout>
 </FrameLayout>

@@ -1,237 +1,216 @@
 package cn.android.adhub
 
+import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.View
-import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.widget.LinearLayout
 import androidx.activity.ComponentActivity
-import androidx.compose.ui.platform.ComposeView
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.lifecycle.lifecycleScope
-import cn.android.adhub.core.HotStartInterstitialManager
-import cn.android.adhub.core.PureModeManager
-import cn.android.adhub.data.AdSdkManager
-import cn.android.adhub.domain.model.AdPlacement
-import cn.android.adhub.domain.repository.AdConfigRepository
-import cn.android.adhub.ui.AdHubApp
-import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.plus
-import kotlinx.coroutines.withContext
-import org.koin.android.ext.android.inject
+import cn.android.adhub.core.AppContextHolder
+import cn.android.adhub.data.provider.csj.CsjAdSdkManager
+import cn.android.adhub.data.provider.csj.CsjConfig
+import com.bytedance.sdk.openadsdk.AdSlot
+import com.bytedance.sdk.openadsdk.CSJAdError
+import com.bytedance.sdk.openadsdk.CSJSplashAd
+import com.bytedance.sdk.openadsdk.TTAdNative
+import com.bytedance.sdk.openadsdk.TTAdSdk
+import com.bytedance.sdk.openadsdk.mediation.MediationConstant
+import com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot
+import com.bytedance.sdk.openadsdk.mediation.ad.MediationSplashRequestInfo
 
 /**
- * 冷启动开屏 Activity（LAUNCHER）—— 单 Activity，首帧即渲染 Compose。
+ * 冷启动开屏 Activity — 对齐 flutter_merge 方案。
  *
- * 两段超时：
- * - 阶段 1（启动超时 8s）：SDK 初始化 + 广告加载，超时未 show → 降级进首页
- * - 阶段 2（广告超时 10s）：广告展示中，超时未 close → 强制降级进首页
+ * 核心思路：
+ * 1. 不在 Application 中预加载广告，避免 Application 初始化过重
+ * 2. SplashAdActivity 立即显示品牌 loading panel（与 launch_background 背景一致）
+ * 3. 在 Activity 内并行拉取远程配置 + 初始化 SDK + 加载开屏广告
+ * 4. 广告就绪后隐藏 loading panel，直接展示广告
+ * 5. 超时或失败则跳转主页
  */
 class SplashAdActivity : ComponentActivity() {
 
-    private val adSdkManager: AdSdkManager by inject()
-    private val adConfigRepo: AdConfigRepository by inject()
-    private val pureModeManager: PureModeManager by inject()
-    private val hotStartManager: HotStartInterstitialManager by inject()
-
-    private var adContainer: ViewGroup? = null
-    private var homeComposeView: ComposeView? = null
-    private var finished = false
-
-    @Volatile
-    private var keepSplash = true
-
-    /** 阶段 1 启动超时 Job，广告开始展示后取消 */
-    private var launchTimeoutJob: Job? = null
-    /** 阶段 2 广告超时 Job，广告关闭后取消 */
-    private var adTimeoutJob: Job? = null
-
     companion object {
         private const val TAG = "SplashAdActivity"
-        /** 阶段 1：SDK 初始化 + 广告加载的最大等待时间（穿山甲 SDK 内部 SdkSettings 远程配置拉取可能需要 10-12s） */
-        private const val LAUNCH_TIMEOUT_MS = 15_000L
-        /** 阶段 2：广告展示的最大等待时间（兜底，正常由 SDK 自己关闭） */
-        private const val AD_TIMEOUT_MS = 10_000L
+        private const val SPLASH_TIMEOUT_MS = 5000
+        private const val FALLBACK_TIMEOUT_MS = 8000L
     }
 
-    private val ceh = CoroutineExceptionHandler { _, throwable ->
-        Log.e(TAG, "协程异常: ${throwable.message}", throwable)
-        keepSplash = false
-        cancelAllTimeouts()
-        goToHome()
-    }
-
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val onCreateTime = System.currentTimeMillis()
-
     private fun elapsed() = "${System.currentTimeMillis() - onCreateTime}ms"
 
+    private lateinit var adContainer: FrameLayout
+    private lateinit var loadingPanel: LinearLayout
+    private var finished = false
+    private var csjCanJump = false
+
+    private val csjSplashRequestInfo = object : MediationSplashRequestInfo(
+        MediationConstant.ADN_PANGLE, "", "", ""
+    ) {}
+
     override fun onCreate(savedInstanceState: Bundle?) {
-        val splashScreen = installSplashScreen()
-        splashScreen.setKeepOnScreenCondition { keepSplash }
-
         super.onCreate(savedInstanceState)
-        Log.d(TAG, "onCreate @${elapsed()} — 系统 splash 已就位")
         setContentView(R.layout.activity_splash_ad)
+
+        AppContextHolder.init(applicationContext)
+
         adContainer = findViewById(R.id.splash_ad_container)
-        homeComposeView = findViewById(R.id.home_compose_view)
+        loadingPanel = findViewById(R.id.splash_loading_panel)
 
-        homeComposeView?.setContent { AdHubApp() }
-        hotStartManager.bindActivity(this)
-        Log.d(TAG, "Compose 首页预渲染已启动")
+        Log.d(TAG, "onCreate @${elapsed()}")
 
-        // 阶段 1：启动超时 —— 跑在 Default 线程，不受主线程阻塞影响
-        launchTimeoutJob = (lifecycleScope + ceh).launch(Dispatchers.Default) {
-            delay(LAUNCH_TIMEOUT_MS)
-            Log.w(TAG, "启动超时 @${elapsed()} — 降级进入主页")
-            keepSplash = false
-            withContext(Dispatchers.Main) { goToHome() }
-        }
+        // 兜底超时：8s 后必须进主页
+        mainHandler.postDelayed({ goToMain() }, FALLBACK_TIMEOUT_MS)
 
-        // 冷启动流程（在 Default 线程执行，避免主线程被 SDK 内部任务阻塞导致 delay() 恢复延迟）
-        (lifecycleScope + ceh).launch(Dispatchers.Default) {
-            try {
-                startColdFlow()
-            } catch (e: Exception) {
-                Log.e(TAG, "startColdFlow 异常: ${e.message}", e)
-                keepSplash = false
-                cancelAllTimeouts()
-                withContext(Dispatchers.Main) { goToHome() }
-            }
-        }
+        // 在 Activity 内启动广告加载流程
+        startSplashAdFlow()
     }
 
-    private suspend fun startColdFlow() {
-        Log.d(TAG, "startColdFlow 开始")
-
-        if (pureModeManager.checkActive()) {
-            Log.i(TAG, "纯净模式已激活，跳过开屏广告")
-            keepSplash = false
-            cancelAllTimeouts()
-            withContext(Dispatchers.Main) { goToHome() }
-            return
+    private fun startSplashAdFlow() {
+        // 确保隐私同意（首次安装默认同意，与预加载方案保持一致）
+        if (!CsjAdSdkManager.isPrivacyAgreed(this)) {
+            CsjAdSdkManager.setPrivacyAgreed(this, true)
         }
 
-        // 等待 SDK 就绪
-        Log.d(TAG, "等待 SDK 就绪…")
-        try {
-            val provider = adSdkManager.currentProvider
-            // 轮询等待，50ms 间隔，最多 3s
-            var waited = 0
-            while (waited < 3000) {
-                if (provider.isReady()) break
-                delay(50)
-                waited += 50
+        // 异步拉取远程配置（供本次或下次使用）
+        SplashAdPreloader.fetchRemoteConfigAsync(this)
+
+        // 初始化 SDK 并加载广告
+        CsjAdSdkManager.ensureReady(this, object : CsjAdSdkManager.ReadyCallback {
+            override fun onReady() {
+                Log.d(TAG, "SDK 就绪 @${elapsed()}")
+                doLoadSplashAd()
             }
-            if (!provider.isReady()) {
-                Log.w(TAG, "SDK 仍未就绪，继续尝试展示广告")
+
+            override fun onFailed() {
+                Log.w(TAG, "SDK 初始化失败，进入主页 @${elapsed()}")
+                goToMain()
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "等待 SDK 就绪异常: ${e.message}", e)
-            keepSplash = false
-            cancelAllTimeouts()
-            withContext(Dispatchers.Main) { goToHome() }
-            return
-        }
-        Log.d(TAG, "SDK 就绪 @${elapsed()}")
+        })
+    }
 
-        // 对齐 flutter_merge：SDK 就绪后拉远程广告配置，优先用服务端下发的代码位和通道
-        try {
-            Log.d(TAG, "开始拉取远程广告配置…")
-            val remote = adConfigRepo.fetchAdConfig()
-            if (remote != null) {
-                Log.i(TAG, "远程广告配置已加载 @${elapsed()}: adType=${remote.adType} splashCode=${remote.adSplashCode}")
-                // 服务端下发的 adType 可能跟本地缓存不一致，切换通道并初始化
-                remote.adType?.let {
-                    adSdkManager.applyRemoteAdType(it)
-                    adSdkManager.ensureProviderReady()
-                    Log.i(TAG, "通道已切换: ${adSdkManager.currentChannel.displayName}")
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "拉取远程广告配置失败，使用本地缓存/硬编码: ${e.message}")
-        }
-
-        val codeId = adConfigRepo.getCodeId(AdPlacement.Splash)
-        Log.d(TAG, "开屏代码位: $codeId")
-        if (codeId.isEmpty()) {
-            Log.w(TAG, "开屏代码位为空，跳过")
-            keepSplash = false
-            cancelAllTimeouts()
-            withContext(Dispatchers.Main) { goToHome() }
+    private fun doLoadSplashAd() {
+        if (isFinishing || isDestroyed) {
+            goToMain()
             return
         }
 
-        val provider = adSdkManager.currentProvider
-        val container = adContainer
-        if (container == null || isFinishing || isDestroyed) {
-            keepSplash = false
-            cancelAllTimeouts()
-            withContext(Dispatchers.Main) { goToHome() }
-            return
-        }
+        val prefs = getSharedPreferences("ad_remote_config", MODE_PRIVATE)
+        val remote = prefs.getString("splash", null)
+        val codeId = if (!remote.isNullOrEmpty()) remote else CsjConfig.SPLASH_CODE_ID
 
-        Log.d(TAG, "当前通道: ${provider.javaClass.simpleName}")
-        Log.i(TAG, "开始预加载开屏广告…")
+        Log.d(TAG, "加载开屏广告: codeId=$codeId @${elapsed()}")
 
-        try {
-            // showSplashAd 内部 UI 操作已通过 container.post 切回主线程，
-            // 此处无需 withContext(Dispatchers.Main)，避免主线程被 SDK 初始化阻塞时协程饿死
-            val shown = provider.showSplashAd(
-                activity = this@SplashAdActivity,
-                codeId = codeId,
-                container = container,
-                onAdLoaded = {
-                    // 广告素材就绪 → 取消启动超时
-                    Log.i(TAG, "广告素材就绪 @${elapsed()} — 取消启动超时")
-                    launchTimeoutJob?.cancel()
-                    launchTimeoutJob = null
-                },
-                onAdShown = {
-                    // 广告真正可见 → 释放系统 splash → 启动广告超时
-                    Log.i(TAG, "广告已展示 @${elapsed()} — 释放系统 splash，启动广告超时")
-                    keepSplash = false
-                    adTimeoutJob = (lifecycleScope + ceh).launch {
-                        delay(AD_TIMEOUT_MS)
-                        if (!finished) {
-                            Log.w(TAG, "广告超时 @${elapsed()} — 强制降级")
-                            goToHome()
-                        }
-                    }
-                },
+        val dm = resources.displayMetrics
+        val adSlot = AdSlot.Builder()
+            .setCodeId(codeId)
+            .setExpressViewAcceptedSize(
+                dm.widthPixels / dm.density,
+                dm.heightPixels / dm.density
             )
-            Log.i(TAG, if (shown) "开屏广告已关闭 @${elapsed()}" else "开屏广告未展示（无填充或渲染失败）@${elapsed()}")
-        } catch (e: Exception) {
-            Log.e(TAG, "开屏广告异常: ${e.message}", e)
+            .setMediationAdSlot(
+                MediationAdSlot.Builder()
+                    .setMediationSplashRequestInfo(csjSplashRequestInfo)
+                    .build()
+            )
+            .build()
+
+        TTAdSdk.getAdManager().createAdNative(this)
+            .loadSplashAd(adSlot, object : TTAdNative.CSJSplashAdListener {
+                override fun onSplashLoadSuccess(ad: CSJSplashAd) {
+                    Log.i(TAG, "广告加载成功 @${elapsed()}")
+                }
+
+                override fun onSplashLoadFail(error: CSJAdError) {
+                    Log.e(TAG, "广告加载失败: code=${error.code} msg=${error.msg} @${elapsed()}")
+                    goToMain()
+                }
+
+                override fun onSplashRenderSuccess(ad: CSJSplashAd) {
+                    if (isFinishing || isDestroyed) {
+                        goToMain()
+                        return
+                    }
+                    Log.i(TAG, "广告渲染成功 @${elapsed()}")
+                    showAd(ad)
+                }
+
+                override fun onSplashRenderFail(ad: CSJSplashAd, error: CSJAdError) {
+                    Log.e(TAG, "广告渲染失败: code=${error.code} msg=${error.msg} @${elapsed()}")
+                    goToMain()
+                }
+            }, SPLASH_TIMEOUT_MS)
+    }
+
+    private fun showAd(ad: CSJSplashAd) {
+        if (finished || isFinishing) return
+
+        mainHandler.removeCallbacksAndMessages(null)
+        loadingPanel.visibility = View.GONE
+
+        Log.i(TAG, "展示开屏广告 @${elapsed()}")
+
+        ad.setSplashAdListener(object : CSJSplashAd.SplashAdListener {
+            override fun onSplashAdShow(ad: CSJSplashAd) {
+                Log.i(TAG, "开屏广告已展示 @${elapsed()}")
+            }
+
+            override fun onSplashAdClick(ad: CSJSplashAd) {
+                Log.d(TAG, "开屏广告被点击")
+            }
+
+            override fun onSplashAdClose(ad: CSJSplashAd, closeType: Int) {
+                Log.i(TAG, "开屏广告关闭, closeType=$closeType @${elapsed()}")
+                mainHandler.post { nextCsj() }
+            }
+        })
+
+        ad.showSplashView(adContainer)
+    }
+
+    private fun nextCsj() {
+        if (finished || isFinishing) return
+        if (csjCanJump) {
+            goToMain()
+        } else {
+            csjCanJump = true
         }
-
-        // 广告关闭（正常或异常） → 取消广告超时 → 进首页
-        cancelAllTimeouts()
-        withContext(Dispatchers.Main) { goToHome() }
     }
 
-    private fun cancelAllTimeouts() {
-        launchTimeoutJob?.cancel()
-        launchTimeoutJob = null
-        adTimeoutJob?.cancel()
-        adTimeoutJob = null
-    }
-
-    private fun goToHome() {
-        if (finished || isFinishing || isDestroyed) return
+    private fun goToMain() {
+        if (finished || isFinishing) return
         finished = true
-        keepSplash = false
-        adContainer?.visibility = View.GONE
-        Log.i(TAG, "进入主页 @${elapsed()} — adContainer GONE, Compose 露出")
+        Log.i(TAG, "进入主界面 @${elapsed()}")
+        mainHandler.removeCallbacksAndMessages(null)
+
+        val intent = Intent(this, MainActivity::class.java)
+        intent.putExtra("cold_start", true)
+        startActivity(intent)
+        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+        finish()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (csjCanJump) {
+            Log.d(TAG, "onResume 补跳转 CSJ")
+            goToMain()
+        }
+        csjCanJump = true
+    }
+
+    override fun onPause() {
+        super.onPause()
+        Log.d(TAG, "onPause 清除可跳标志 CSJ")
+        csjCanJump = false
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacksAndMessages(null)
         super.onDestroy()
-        cancelAllTimeouts()
-        hotStartManager.unbindActivity(this)
-        adContainer = null
-        homeComposeView = null
     }
 }

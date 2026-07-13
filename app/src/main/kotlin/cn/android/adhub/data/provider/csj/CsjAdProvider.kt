@@ -22,6 +22,9 @@ import cn.android.adhub.domain.provider.AdProvider
 import com.bytedance.sdk.openadsdk.TTFullScreenVideoAd
 import com.bytedance.sdk.openadsdk.TTFeedAd
 import com.bytedance.sdk.openadsdk.TTNativeAd
+import com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot
+import com.bytedance.sdk.openadsdk.mediation.ad.MediationSplashRequestInfo
+import com.bytedance.sdk.openadsdk.mediation.MediationConstant
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withTimeoutOrNull
@@ -33,83 +36,59 @@ class CsjAdProvider(
     private val tokenRepo: cn.android.adhub.domain.repository.TokenRepository,
 ) : AdProvider {
 
-    // ── 状态标志（对齐 flutter_merge CsjAdSdkManager） ──
-
     @Volatile private var initialized = false
     @Volatile private var starting = false
     @Volatile private var started = false
-
-    // ── 公开初始化入口 ──
 
     override suspend fun initialize(context: Context): Result<Unit> {
         initIfNeeded(context)
         return ensureReady()
     }
 
-    // ── 第一步：TTAdSdk.init（同步，只调一次） ──
-
     private fun initIfNeeded(context: Context) {
         if (initialized) return
         val config = CsjConfig.buildAdConfig(context)
         val initResult = TTAdSdk.init(context.applicationContext, config)
         android.util.Log.i("CsjAdProvider", "TTAdSdk.init result=$initResult appId=${CsjConfig.APP_ID} isSdkReady=${TTAdSdk.isSdkReady()}")
-        // 若 SDK 已被 ContentProvider 初始化，尝试 updateAdConfig 强制覆盖
-        if (!initResult || !TTAdSdk.isSdkReady()) {
-            TTAdSdk.updateAdConfig(config)
-            android.util.Log.i("CsjAdProvider", "TTAdSdk.updateAdConfig called, isSdkReady=${TTAdSdk.isSdkReady()}")
-        }
         initialized = true
     }
 
-    // ── 第二步：ensureReady（start + 轮询 + 线程安全，对齐 flutter_merge） ──
-
     private suspend fun ensureReady(): Result<Unit> {
-        // 已就绪 → 直接返回
-        if (started && isReady()) {
-            return Result.success(Unit)
+        if (started && isReady()) return Result.success(Unit)
+
+        val shouldStart = synchronized(this) {
+            if (starting || (started && isReady())) false
+            else { starting = true; true }
         }
-        // 正在启动中 → 加入等待
-        synchronized(this) {
-            if (starting) {
-                return@synchronized // 走外部 suspendCancellableCoroutine 轮询
+        if (!shouldStart) {
+            var waited = 0
+            while (waited < 3000 && !isReady()) {
+                delay(50)
+                waited += 50
             }
-            if (started && isReady()) {
-                return Result.success(Unit)
-            }
-            starting = true
+            return if (isReady()) Result.success(Unit)
+                   else Result.failure(Exception("CSJ SDK ready timeout"))
         }
 
         return suspendCancellableCoroutine { cont ->
             TTAdSdk.start(object : TTAdSdk.Callback {
                 override fun success() {
-                    synchronized(this@CsjAdProvider) {
-                        started = true
-                        starting = false
-                    }
+                    synchronized(this@CsjAdProvider) { started = true; starting = false }
                     if (cont.isActive) waitForSdkReady(cont, 0)
                 }
                 override fun fail(code: Int, msg: String) {
-                    synchronized(this@CsjAdProvider) {
-                        started = false
-                        starting = false
-                    }
-                    if (cont.isActive) {
-                        cont.resume(Result.failure(Exception("CSJ start failed[$code]: $msg")))
-                    }
+                    synchronized(this@CsjAdProvider) { started = false; starting = false }
+                    if (cont.isActive) cont.resume(Result.failure(Exception("CSJ start failed[$code]: $msg")))
                 }
             })
         }
     }
-
-    // ── SDK 状态检查 ──
 
     override fun isReady(): Boolean {
         return try {
             TTAdSdk.isSdkReady()
         } catch (_: Exception) { false }
     }
-
-    // ── 轮询 isSdkReady（对齐 flutter_merge waitForReady：20 次×120ms = 2.4s） ──
 
     private fun waitForSdkReady(
         cont: kotlinx.coroutines.CancellableContinuation<Result<Unit>>,
@@ -138,7 +117,6 @@ class CsjAdProvider(
     }
 
     override fun revokePrivacyConsent(context: Context) {
-        // 对齐 flutter_merge：重置所有状态标志
         synchronized(this) {
             initialized = false
             starting = false
@@ -151,7 +129,6 @@ class CsjAdProvider(
         val ctx = AppContextHolder.context
         val density = ctx.resources.displayMetrics.density
 
-        // 容器：对齐 flutter_merge MATCH_PARENT x MATCH_PARENT + clipChildren
         val container = FrameLayout(ctx).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -163,7 +140,6 @@ class CsjAdProvider(
         }
         state.value = AdLoadState.Loaded(container)
 
-        // 等容器测量后再加载广告，避免宽高为 0
         container.post {
             val cw = container.width
             val ch = container.height
@@ -172,18 +148,15 @@ class CsjAdProvider(
             val widthDp = wPx / density
             val heightDp = hPx.toFloat() / density
 
+            // GroMore 聚合模式：setMediationAdSlot
             val adSlot = AdSlot.Builder()
                 .setCodeId(codeId)
                 .setImageAcceptedSize(wPx, hPx)
                 .setExpressViewAcceptedSize(widthDp, heightDp)
-                .setMediationAdSlot(
-                    com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot.Builder()
-                        .setExtraObject("show_adn_load_error_detail", true)
-                        .build()
-                )
+                .setMediationAdSlot(MediationAdSlot.Builder().build())
                 .build()
 
-            android.util.Log.e(TAG, "Banner load: codeId=$codeId cw=$cw ch=$ch wDp=$widthDp hDp=$heightDp")
+            android.util.Log.e(TAG, "Banner load(GroMore): codeId=$codeId cw=$cw ch=$ch wDp=$widthDp hDp=$heightDp")
             val adNative = TTAdSdk.getAdManager().createAdNative(ctx)
             adNative.loadBannerExpressAd(adSlot, object : TTAdNative.NativeExpressAdListener {
                 override fun onError(errorCode: Int, errorMsg: String) {
@@ -237,40 +210,35 @@ class CsjAdProvider(
         }
         return state
     }
+
     override fun loadFeed(codeId: String, count: Int): StateFlow<AdLoadState<List<View>>> {
         val state = MutableStateFlow<AdLoadState<List<View>>>(AdLoadState.Loading)
         val ctx = AppContextHolder.context
 
         val density = ctx.resources.displayMetrics.density
-        // 对齐 flutter_merge: rootView 始终在视图树，先返回容器让 Compose 挂载
         val container = FrameLayout(ctx).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                (420f * density).toInt(),  // 固定高度 420dp
+                (420f * density).toInt(),
             )
             setPadding(0, 0, 0, 0)
             setClipChildren(true)
             setClipToPadding(true)
         }
-        // 立即把容器发出去，Compose AndroidView 才能挂载它
         state.value = AdLoadState.Loaded(listOf(container))
 
-        // container.post: 挂载后执行加载，此时 container.width 有值
         container.post {
             val screenW = if (container.width > 0) container.width
                 else ctx.resources.displayMetrics.widthPixels
+            // GroMore 聚合模式：setMediationAdSlot
             val adSlot = AdSlot.Builder()
                 .setCodeId(codeId)
                 .setImageAcceptedSize(Math.max(1, screenW), 0)
                 .setAdCount(3)
-                .setMediationAdSlot(
-                    com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot.Builder()
-                        .setMuted(false)
-                        .build()
-                )
+                .setMediationAdSlot(MediationAdSlot.Builder().build())
                 .build()
 
-            android.util.Log.e(TAG, "Feed load: codeId=$codeId sw=$screenW")
+            android.util.Log.e(TAG, "Feed load(GroMore): codeId=$codeId sw=$screenW")
             val adNative = TTAdSdk.getAdManager().createAdNative(ctx)
             adNative.loadFeedAd(adSlot, object : TTAdNative.FeedAdListener {
                 override fun onError(errorCode: Int, errorMsg: String?) {
@@ -303,6 +271,7 @@ class CsjAdProvider(
         }
         return state
     }
+
     override suspend fun showInterstitial(activity: Activity, codeId: String): Boolean {
         if (activity.isFinishing || activity.isDestroyed) return false
         if (codeId.isEmpty()) return false
@@ -310,10 +279,12 @@ class CsjAdProvider(
         return suspendCancellableCoroutine { cont ->
             val adNative = TTAdSdk.getAdManager().createAdNative(activity)
 
+            // GroMore 聚合模式：setMediationAdSlot
             val adSlot = AdSlot.Builder()
                 .setCodeId(codeId)
                 .setOrientation(TTAdConstant.VERTICAL)
                 .setAdLoadType(TTAdLoadType.LOAD)
+                .setMediationAdSlot(MediationAdSlot.Builder().build())
                 .build()
 
             adNative.loadFullScreenVideoAd(adSlot, object : TTAdNative.FullScreenVideoAdListener {
@@ -324,16 +295,13 @@ class CsjAdProvider(
                     if (cont.isActive) cont.resume(false)
                 }
 
-                override fun onFullScreenVideoAdLoad(ad: com.bytedance.sdk.openadsdk.TTFullScreenVideoAd) {
-                    // 加载成功，等待 onFullScreenVideoCached
-                }
+                override fun onFullScreenVideoAdLoad(ad: com.bytedance.sdk.openadsdk.TTFullScreenVideoAd) {}
 
                 override fun onFullScreenVideoCached() {}
 
                 override fun onFullScreenVideoCached(ad: com.bytedance.sdk.openadsdk.TTFullScreenVideoAd) {
                     if (activity.isFinishing || activity.isDestroyed || !cont.isActive) return
 
-                    // ECPM 日志
                     try {
                         val extra = ad.mediaExtraInfo
                         if (extra != null) {
@@ -370,9 +338,6 @@ class CsjAdProvider(
         }
     }
 
-    // ── 激励视频 ──
-    // 参考 flutter_merge CsjReadRewardVideoActivity:
-    // loadRewardVideoAd → onRewardVideoCached(ad) → ad.showRewardVideoAd(activity)
     override suspend fun showRewardVideo(
         activity: Activity, codeId: String, slotKey: String,
     ): RewardResult {
@@ -393,24 +358,20 @@ class CsjAdProvider(
                 else -> "阅读"
             }
 
+            // GroMore 聚合模式：setMediationAdSlot
             val adSlot = AdSlot.Builder()
                 .setCodeId(codeId)
                 .setUserID(tokenRepo.cachedUserId?.toString() ?: "")
                 .setRewardName(rewardName)
                 .setOrientation(TTAdConstant.VERTICAL)
                 .setAdLoadType(TTAdLoadType.LOAD)
-                .setMediationAdSlot(
-                    com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot.Builder()
-                        .setExtraObject("show_adn_load_error_detail", true)
-                        .build()
-                )
+                .setMediationAdSlot(MediationAdSlot.Builder().build())
                 .build()
 
             var adRef: TTRewardVideoAd? = null
             var shown = false
             var rewardGranted = false
 
-            // 30 秒超时兜底
             val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
             val timeoutRunnable = Runnable {
                 if (cont.isActive) {
@@ -424,9 +385,8 @@ class CsjAdProvider(
                 adRef = null
             }
 
-            /** 对齐 flutter_merge handleAd：设置监听器 */
             fun handleAd(ad: TTRewardVideoAd) {
-                if (adRef != null) return // 已处理过
+                if (adRef != null) return
                 adRef = ad
                 try {
                     val extra = ad.mediaExtraInfo
@@ -458,7 +418,7 @@ class CsjAdProvider(
                 })
             }
 
-            android.util.Log.e(TAG, "Reward load start: codeId=$codeId slotKey=$slotKey")
+            android.util.Log.e(TAG, "Reward load start(GroMore): codeId=$codeId slotKey=$slotKey")
             adNative.loadRewardVideoAd(adSlot, object : TTAdNative.RewardVideoAdListener {
                 override fun onError(code: Int, message: String?) {
                     android.util.Log.e(TAG, "Reward onError[$code]: $message")
@@ -471,7 +431,6 @@ class CsjAdProvider(
                 override fun onRewardVideoAdLoad(ad: TTRewardVideoAd) {
                     android.util.Log.e(TAG, "Reward onRewardVideoAdLoad")
                     handleAd(ad)
-                    // GroMore 聚合场景下 onRewardVideoCached 可能不触发，直接 show
                     if (adRef != null && !activity.isFinishing && !activity.isDestroyed) {
                         try {
                             adRef!!.showRewardVideoAd(activity)
@@ -504,10 +463,13 @@ class CsjAdProvider(
         }
     }
 
-    // ── 开屏广告（对齐 flutter_merge 预加载模式） ──
-    //
-    // 1. loadSplashAd → onSplashRenderSuccess 存 ad，回调 onAdLoaded（释放系统 splash）
-    // 2. 等待 container 可见后 showSplashView → onSplashAdClose → 恢复协程
+    // ── 开屏广告（GroMore 聚合模式）──
+
+    /** GroMore 开屏请求信息（对齐 flutter_merge: ADN_PANGLE, 全空字符串） */
+    private val csjSplashRequestInfo = object : MediationSplashRequestInfo(
+        MediationConstant.ADN_PANGLE, "", "", ""
+    ) {}
+
     override suspend fun showSplashAd(
         activity: Activity, codeId: String, container: ViewGroup,
         onAdLoaded: (() -> Unit)?, onAdShown: (() -> Unit)?,
@@ -518,22 +480,18 @@ class CsjAdProvider(
             val screenW = dm.widthPixels
             val screenH = dm.heightPixels
 
-            val slotBuilder = AdSlot.Builder()
+            // GroMore 聚合模式：setMediationAdSlot + MediationSplashRequestInfo
+            val adSlot = AdSlot.Builder()
                 .setCodeId(codeId)
                 .setExpressViewAcceptedSize(screenW / dm.density, screenH / dm.density)
+                .setMediationAdSlot(
+                    MediationAdSlot.Builder()
+                        .setMediationSplashRequestInfo(csjSplashRequestInfo)
+                        .build()
+                )
+                .build()
 
-            // 统一使用 GroMore 聚合模式：setMediationAdSlot + setMediationSplashRequestInfo
-            // 参考项目 flutter_merge 的 loadSplashAdCsj 始终使用 setMediationAdSlot
-            val fallback = CsjConfig.buildSplashFallback()
-            android.util.Log.i(TAG, "开屏 GroMore 模式: codeId=$codeId")
-            slotBuilder.setMediationAdSlot(
-                com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot.Builder()
-                    .setMediationSplashRequestInfo(fallback)
-                    .setExtraObject("show_adn_load_error_detail", true)
-                    .build()
-            )
-
-            val adSlot = slotBuilder.build()
+            android.util.Log.i(TAG, "开屏广告(GroMore模式): codeId=$codeId")
 
             val adNative = TTAdSdk.getAdManager().createAdNative(activity)
 
@@ -546,12 +504,9 @@ class CsjAdProvider(
             adNative.loadSplashAd(adSlot, object : TTAdNative.CSJSplashAdListener {
                 override fun onSplashLoadSuccess(ad: CSJSplashAd) {
                     loadSuccessReceived = true
-                    // 等待 onSplashRenderSuccess
                 }
 
                 override fun onSplashLoadFail(error: CSJAdError) {
-                    // GroMore 瀑布流中单个 ADN 失败不意味着整体失败，
-                    // 如果已有其他 ADN 加载成功，等待其渲染
                     android.util.Log.e(TAG, "开屏加载失败: code=${error.code}, msg=${error.msg}")
                     if (!loadSuccessReceived && cont.isActive) {
                         cont.resume(false)
@@ -561,13 +516,9 @@ class CsjAdProvider(
                 override fun onSplashRenderSuccess(ad: CSJSplashAd) {
                     if (activity.isFinishing || activity.isDestroyed || !cont.isActive) return
 
-                    // ① 暂存广告引用（对齐 flutter_merge: pendingCsjSplash = ad）
-                    // ② 先回调 onAdLoaded，让调用方释放系统 splash
-                    // ③ 等容器就绪后再真正展示
                     onAdLoaded?.invoke()
                     android.util.Log.i(TAG, "开屏广告素材就绪，等待容器…")
 
-                    // 延迟一帧展示，确保系统 splash 消退不影响 CSJ 倒计时初始化
                     container.post {
                         if (activity.isFinishing || activity.isDestroyed || !cont.isActive) return@post
                         android.util.Log.i(TAG, "开始展示开屏广告")
@@ -598,27 +549,9 @@ class CsjAdProvider(
         }
     }
 
-    // ── 工具 ──
-
-    private fun buildContainer(ctx: Context, adView: View, adWidth: Float, adHeight: Float): FrameLayout {
-        return FrameLayout(ctx).apply {
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-            val scale = ctx.resources.displayMetrics.density
-            val w = if (adWidth > 0f) (adWidth * scale).toInt().coerceAtMost(ctx.resources.displayMetrics.widthPixels)
-                    else ViewGroup.LayoutParams.WRAP_CONTENT
-            val h = if (adHeight > 0f) (adHeight * scale).toInt()
-                    else ViewGroup.LayoutParams.WRAP_CONTENT
-            val lp = FrameLayout.LayoutParams(w, h, Gravity.CENTER)
-            addView(adView, lp)
-        }
-    }
-
     companion object {
         private const val SPLASH_TIMEOUT_MS = 10_000
         private const val REWARD_TIMEOUT_MS = 30_000L
-        private const val GRO_MORE_DELAY_MS = 3000L  // isSdkReady 后等 GroMore 配置下载
         private const val TAG = "CsjAdProvider"
     }
 }
