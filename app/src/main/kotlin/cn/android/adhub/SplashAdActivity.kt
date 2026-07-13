@@ -5,10 +5,9 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import android.view.View
 import android.widget.FrameLayout
-import android.widget.LinearLayout
 import androidx.activity.ComponentActivity
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import cn.android.adhub.core.AppContextHolder
 import cn.android.adhub.data.provider.csj.CsjAdSdkManager
 import cn.android.adhub.data.provider.csj.CsjConfig
@@ -22,14 +21,13 @@ import com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot
 import com.bytedance.sdk.openadsdk.mediation.ad.MediationSplashRequestInfo
 
 /**
- * 冷启动开屏 Activity — 对齐 flutter_merge 方案。
+ * 冷启动开屏 Activity — 使用 AndroidX SplashScreen 作为唯一加载页。
  *
  * 核心思路：
- * 1. 不在 Application 中预加载广告，避免 Application 初始化过重
- * 2. SplashAdActivity 立即显示品牌 loading panel（与 launch_background 背景一致）
- * 3. 在 Activity 内并行拉取远程配置 + 初始化 SDK + 加载开屏广告
- * 4. 广告就绪后隐藏 loading panel，直接展示广告
- * 5. 超时或失败则跳转主页
+ * 1. 系统 SplashScreen 作为唯一加载页，不再展示 App 自己的 loading panel
+ * 2. 在 Activity 内并行拉取远程配置 + 初始化 SDK + 加载开屏广告
+ * 3. 广告渲染成功后，让系统 SplashScreen 退场，直接展示广告
+ * 4. 超时或失败则跳转主页
  */
 class SplashAdActivity : ComponentActivity() {
 
@@ -44,27 +42,29 @@ class SplashAdActivity : ComponentActivity() {
     private fun elapsed() = "${System.currentTimeMillis() - onCreateTime}ms"
 
     private lateinit var adContainer: FrameLayout
-    private lateinit var loadingPanel: LinearLayout
     private var finished = false
     private var csjCanJump = false
+    private var adReady = false
 
     private val csjSplashRequestInfo = object : MediationSplashRequestInfo(
         MediationConstant.ADN_PANGLE, "", "", ""
     ) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_splash_ad)
 
         AppContextHolder.init(applicationContext)
 
+        splashScreen.setKeepOnScreenCondition { !adReady }
+
         adContainer = findViewById(R.id.splash_ad_container)
-        loadingPanel = findViewById(R.id.splash_loading_panel)
 
         Log.d(TAG, "onCreate @${elapsed()}")
 
         // 兜底超时：8s 后必须进主页
-        mainHandler.postDelayed({ goToMain() }, FALLBACK_TIMEOUT_MS)
+        mainHandler.postDelayed({ onSplashLoadFailed() }, FALLBACK_TIMEOUT_MS)
 
         // 在 Activity 内启动广告加载流程
         startSplashAdFlow()
@@ -88,14 +88,14 @@ class SplashAdActivity : ComponentActivity() {
 
             override fun onFailed() {
                 Log.w(TAG, "SDK 初始化失败，进入主页 @${elapsed()}")
-                goToMain()
+                onSplashLoadFailed()
             }
         })
     }
 
     private fun doLoadSplashAd() {
         if (isFinishing || isDestroyed) {
-            goToMain()
+            onSplashLoadFailed()
             return
         }
 
@@ -127,12 +127,12 @@ class SplashAdActivity : ComponentActivity() {
 
                 override fun onSplashLoadFail(error: CSJAdError) {
                     Log.e(TAG, "广告加载失败: code=${error.code} msg=${error.msg} @${elapsed()}")
-                    goToMain()
+                    onSplashLoadFailed()
                 }
 
                 override fun onSplashRenderSuccess(ad: CSJSplashAd) {
                     if (isFinishing || isDestroyed) {
-                        goToMain()
+                        onSplashLoadFailed()
                         return
                     }
                     Log.i(TAG, "广告渲染成功 @${elapsed()}")
@@ -141,7 +141,7 @@ class SplashAdActivity : ComponentActivity() {
 
                 override fun onSplashRenderFail(ad: CSJSplashAd, error: CSJAdError) {
                     Log.e(TAG, "广告渲染失败: code=${error.code} msg=${error.msg} @${elapsed()}")
-                    goToMain()
+                    onSplashLoadFailed()
                 }
             }, SPLASH_TIMEOUT_MS)
     }
@@ -150,8 +150,6 @@ class SplashAdActivity : ComponentActivity() {
         if (finished || isFinishing) return
 
         mainHandler.removeCallbacksAndMessages(null)
-        loadingPanel.visibility = View.GONE
-
         Log.i(TAG, "展示开屏广告 @${elapsed()}")
 
         ad.setSplashAdListener(object : CSJSplashAd.SplashAdListener {
@@ -169,7 +167,17 @@ class SplashAdActivity : ComponentActivity() {
             }
         })
 
+        // 先渲染广告到容器，再让系统 SplashScreen 退场
         ad.showSplashView(adContainer)
+        adReady = true
+    }
+
+    private fun onSplashLoadFailed() {
+        if (finished || isFinishing) return
+        Log.w(TAG, "广告加载失败或超时，退出 SplashScreen 并进入主页 @${elapsed()}")
+        mainHandler.removeCallbacksAndMessages(null)
+        adReady = true
+        mainHandler.postDelayed({ goToMain() }, 100)
     }
 
     private fun nextCsj() {
