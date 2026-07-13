@@ -1,23 +1,26 @@
 package cn.android.adhub.ui.navigation
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import cn.android.adhub.ui.screens.banner.BannerScreen
 import cn.android.adhub.ui.screens.banner.BannerViewModel
+import cn.android.adhub.ui.screens.detail.DetailScreen
+import cn.android.adhub.ui.screens.detail.DetailViewModel
 import cn.android.adhub.ui.screens.feed.FeedScreen
 import cn.android.adhub.ui.screens.feed.FeedViewModel
 import cn.android.adhub.ui.screens.home.HomeScreen
 import cn.android.adhub.ui.screens.interstitial.InterstitialScreen
 import cn.android.adhub.ui.screens.interstitial.InterstitialViewModel
+import cn.android.adhub.ui.screens.reader.ReaderScreen
+import cn.android.adhub.ui.screens.reader.ReaderViewModel
 import cn.android.adhub.ui.screens.reward.RewardScreen
 import cn.android.adhub.ui.screens.reward.RewardViewModel
-import cn.android.adhub.core.PureModeManager
-import org.koin.compose.koinInject
+import cn.android.adhub.ui.screens.search.SearchScreen
+import cn.android.adhub.ui.screens.search.SearchViewModel
 import org.koin.compose.viewmodel.koinViewModel
+import org.koin.core.parameter.parametersOf
 
 /**
  * 应用路由定义。
@@ -27,11 +30,16 @@ import org.koin.compose.viewmodel.koinViewModel
  */
 object Routes {
     const val HOME = "home"
+    const val SEARCH = "search"
+    const val DETAIL = "detail/{mangaId}"
+    const val READER = "reader/{chapterId}/{initialPage}"
     const val BANNER = "banner"
     const val FEED = "feed"
     const val INTERSTITIAL = "interstitial"
     const val REWARD = "reward/{slotKey}"
 
+    fun detail(mangaId: Long) = "detail/$mangaId"
+    fun reader(chapterId: Long, initialPage: Int = 0) = "reader/$chapterId/$initialPage"
     fun reward(slotKey: String) = "reward/$slotKey"
 }
 
@@ -42,17 +50,57 @@ fun AppNavGraph(navController: NavHostController) {
         startDestination = Routes.HOME,
     ) {
         composable(Routes.HOME) {
-            val pureModeManager: PureModeManager = koinInject()
-            val pureModeActive by pureModeManager.isPureModeActive.collectAsState()
             HomeScreen(
-                onBannerClick = { navController.navigate(Routes.BANNER) },
-                onFeedClick = { navController.navigate(Routes.FEED) },
-                onInterstitialClick = { navController.navigate(Routes.INTERSTITIAL) },
-                onRewardClick = { slotKey ->
-                    navController.navigate(Routes.reward(slotKey))
+                onMangaClick = { mangaId ->
+                    navController.navigate(Routes.detail(mangaId))
                 },
-                pureModeActive = pureModeActive,
-                pureModeRemainingMs = pureModeManager.getRemainingTimeMs(),
+                onSearchClick = {
+                    navController.navigate(Routes.SEARCH)
+                }
+            )
+        }
+
+        composable(Routes.SEARCH) {
+            val vm: SearchViewModel = koinViewModel()
+            SearchScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+                onMangaClick = { mangaId ->
+                    navController.navigate("detail/$mangaId")
+                }
+            )
+        }
+
+        composable(Routes.DETAIL) { backStack ->
+            val mangaId = backStack.arguments?.getString("mangaId")?.toLongOrNull() ?: return@composable
+            val vm: DetailViewModel = koinViewModel(parameters = { parametersOf(mangaId) })
+            DetailScreen(
+                mangaId = mangaId,
+                onBack = { navController.popBackStack() },
+                onChapterClick = { mId, chId ->
+                    navController.navigate(Routes.reader(chId))
+                },
+                onMangaClick = { mId ->
+                    navController.navigate(Routes.detail(mId))
+                },
+                viewModel = vm
+            )
+        }
+
+        composable(Routes.READER) { backStack ->
+            val chapterId = backStack.arguments?.getString("chapterId")?.toLongOrNull() ?: return@composable
+            val initialPage = backStack.arguments?.getString("initialPage")?.toIntOrNull() ?: 0
+            val vm: ReaderViewModel = koinViewModel(parameters = { parametersOf(chapterId, initialPage) })
+            ReaderScreen(
+                chapterId = chapterId,
+                initialPage = initialPage,
+                onBack = { navController.popBackStack() },
+                onChapterChange = { chId, page ->
+                    navController.navigate(Routes.reader(chId, page)) {
+                        popUpTo(Routes.READER) { inclusive = true }
+                    }
+                },
+                viewModel = vm
             )
         }
 

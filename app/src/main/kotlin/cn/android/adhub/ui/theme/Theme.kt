@@ -1,24 +1,19 @@
 package cn.android.adhub.ui.theme
 
-import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowCompat
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF4CAF50),
-    secondary = Color(0xFF81C784),
-    tertiary = Color(0xFFA5D6A7),
+    primary = Color(0xFFFF8A65),
+    secondary = Color(0xFFFFAB91),
+    tertiary = Color(0xFFFFCC80),
     background = Color(0xFF121212),
     surface = Color(0xFF1E1E1E),
-    onPrimary = Color.White,
+    onPrimary = Color.Black,
     onSecondary = Color.Black,
     onBackground = Color.White,
     onSurface = Color.White,
@@ -26,9 +21,9 @@ private val DarkColors = darkColorScheme(
 )
 
 private val LightColors = lightColorScheme(
-    primary = Color(0xFF2E7D32),
-    secondary = Color(0xFF4CAF50),
-    tertiary = Color(0xFF66BB6A),
+    primary = Color(0xFFFF6B35),
+    secondary = Color(0xFFFF9800),
+    tertiary = Color(0xFFFFAC4B),
     background = Color(0xFFF5F5F5),
     surface = Color(0xFFFFFFFF),
     onPrimary = Color.White,
@@ -44,15 +39,6 @@ fun AdHubTheme(
     content: @Composable () -> Unit,
 ) {
     val colorScheme = if (darkTheme) DarkColors else LightColors
-
-    val view = LocalView.current
-    if (!view.isInEditMode) {
-        SideEffect {
-            val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.surface.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
-        }
-    }
 
     MaterialTheme(
         colorScheme = colorScheme,

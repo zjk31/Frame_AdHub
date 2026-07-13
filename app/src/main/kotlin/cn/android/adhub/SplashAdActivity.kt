@@ -16,9 +16,11 @@ import cn.android.adhub.domain.repository.AdConfigRepository
 import cn.android.adhub.ui.AdHubApp
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.plus
+import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
 
 /**
@@ -49,8 +51,8 @@ class SplashAdActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "SplashAdActivity"
-        /** 阶段 1：SDK 初始化 + 广告加载的最大等待时间 */
-        private const val LAUNCH_TIMEOUT_MS = 8000L
+        /** 阶段 1：SDK 初始化 + 广告加载的最大等待时间（穿山甲 SDK 内部 SdkSettings 远程配置拉取可能需要 10-12s） */
+        private const val LAUNCH_TIMEOUT_MS = 15_000L
         /** 阶段 2：广告展示的最大等待时间（兜底，正常由 SDK 自己关闭） */
         private const val AD_TIMEOUT_MS = 10_000L
     }
@@ -80,23 +82,23 @@ class SplashAdActivity : ComponentActivity() {
         hotStartManager.bindActivity(this)
         Log.d(TAG, "Compose 首页预渲染已启动")
 
-        // 阶段 1：启动超时 —— 只在广告还没展示时有效
-        launchTimeoutJob = (lifecycleScope + ceh).launch {
+        // 阶段 1：启动超时 —— 跑在 Default 线程，不受主线程阻塞影响
+        launchTimeoutJob = (lifecycleScope + ceh).launch(Dispatchers.Default) {
             delay(LAUNCH_TIMEOUT_MS)
             Log.w(TAG, "启动超时 @${elapsed()} — 降级进入主页")
             keepSplash = false
-            goToHome()
+            withContext(Dispatchers.Main) { goToHome() }
         }
 
-        // 冷启动流程
-        (lifecycleScope + ceh).launch {
+        // 冷启动流程（在 Default 线程执行，避免主线程被 SDK 内部任务阻塞导致 delay() 恢复延迟）
+        (lifecycleScope + ceh).launch(Dispatchers.Default) {
             try {
                 startColdFlow()
             } catch (e: Exception) {
                 Log.e(TAG, "startColdFlow 异常: ${e.message}", e)
                 keepSplash = false
                 cancelAllTimeouts()
-                goToHome()
+                withContext(Dispatchers.Main) { goToHome() }
             }
         }
     }
@@ -108,7 +110,7 @@ class SplashAdActivity : ComponentActivity() {
             Log.i(TAG, "纯净模式已激活，跳过开屏广告")
             keepSplash = false
             cancelAllTimeouts()
-            goToHome()
+            withContext(Dispatchers.Main) { goToHome() }
             return
         }
 
@@ -117,9 +119,11 @@ class SplashAdActivity : ComponentActivity() {
         try {
             val provider = adSdkManager.currentProvider
             // 轮询等待，50ms 间隔，最多 3s
-            repeat(60) {
-                if (provider.isReady()) return@repeat
+            var waited = 0
+            while (waited < 3000) {
+                if (provider.isReady()) break
                 delay(50)
+                waited += 50
             }
             if (!provider.isReady()) {
                 Log.w(TAG, "SDK 仍未就绪，继续尝试展示广告")
@@ -128,16 +132,17 @@ class SplashAdActivity : ComponentActivity() {
             Log.e(TAG, "等待 SDK 就绪异常: ${e.message}", e)
             keepSplash = false
             cancelAllTimeouts()
-            goToHome()
+            withContext(Dispatchers.Main) { goToHome() }
             return
         }
         Log.d(TAG, "SDK 就绪 @${elapsed()}")
 
         // 对齐 flutter_merge：SDK 就绪后拉远程广告配置，优先用服务端下发的代码位和通道
         try {
+            Log.d(TAG, "开始拉取远程广告配置…")
             val remote = adConfigRepo.fetchAdConfig()
             if (remote != null) {
-                Log.i(TAG, "远程广告配置已加载: adType=${remote.adType} splashCode=${remote.adSplashCode}")
+                Log.i(TAG, "远程广告配置已加载 @${elapsed()}: adType=${remote.adType} splashCode=${remote.adSplashCode}")
                 // 服务端下发的 adType 可能跟本地缓存不一致，切换通道并初始化
                 remote.adType?.let {
                     adSdkManager.applyRemoteAdType(it)
@@ -155,7 +160,7 @@ class SplashAdActivity : ComponentActivity() {
             Log.w(TAG, "开屏代码位为空，跳过")
             keepSplash = false
             cancelAllTimeouts()
-            goToHome()
+            withContext(Dispatchers.Main) { goToHome() }
             return
         }
 
@@ -164,7 +169,7 @@ class SplashAdActivity : ComponentActivity() {
         if (container == null || isFinishing || isDestroyed) {
             keepSplash = false
             cancelAllTimeouts()
-            goToHome()
+            withContext(Dispatchers.Main) { goToHome() }
             return
         }
 
@@ -172,8 +177,10 @@ class SplashAdActivity : ComponentActivity() {
         Log.i(TAG, "开始预加载开屏广告…")
 
         try {
+            // showSplashAd 内部 UI 操作已通过 container.post 切回主线程，
+            // 此处无需 withContext(Dispatchers.Main)，避免主线程被 SDK 初始化阻塞时协程饿死
             val shown = provider.showSplashAd(
-                activity = this,
+                activity = this@SplashAdActivity,
                 codeId = codeId,
                 container = container,
                 onAdLoaded = {
@@ -202,7 +209,7 @@ class SplashAdActivity : ComponentActivity() {
 
         // 广告关闭（正常或异常） → 取消广告超时 → 进首页
         cancelAllTimeouts()
-        goToHome()
+        withContext(Dispatchers.Main) { goToHome() }
     }
 
     private fun cancelAllTimeouts() {

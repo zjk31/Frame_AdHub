@@ -80,17 +80,17 @@ class AdConfigRepositoryImpl(
             val data = json.optJSONObject("data") ?: return null
             return RemoteConfigData(
                 adType = if (data.has("adType")) data.getInt("adType") else null,
-                adCode = data.optString("adCode", null),
+                adCode = data.optString("adCode", "").ifEmpty { null },
                 adStatus = if (data.has("adStatus")) data.getInt("adStatus") else null,
-                adSplashCode = data.optString("adSplashCode", null),
-                adBannerCode = data.optString("adBannerCode", null),
-                adMiniBannerCode = data.optString("adMiniBannerCode", null),
-                adRewardCode = data.optString("adRewardCode", null),
-                adTaskCode = data.optString("adTaskCode", null),
-                adPureCode = data.optString("adPureCode", null),
-                adDownloadCode = data.optString("adDownloadCode", null),
-                adInterstitialCode = data.optString("adInterstitialCode", null),
-                adFreeCode = data.optString("adFreeCode", null),
+                adSplashCode = data.optString("adSplashCode", "").ifEmpty { null },
+                adBannerCode = data.optString("adBannerCode", "").ifEmpty { null },
+                adMiniBannerCode = data.optString("adMiniBannerCode", "").ifEmpty { null },
+                adRewardCode = data.optString("adRewardCode", "").ifEmpty { null },
+                adTaskCode = data.optString("adTaskCode", "").ifEmpty { null },
+                adPureCode = data.optString("adPureCode", "").ifEmpty { null },
+                adDownloadCode = data.optString("adDownloadCode", "").ifEmpty { null },
+                adInterstitialCode = data.optString("adInterstitialCode", "").ifEmpty { null },
+                adFreeCode = data.optString("adFreeCode", "").ifEmpty { null },
             )
         } catch (e: Exception) {
             Log.w(TAG, "requestAdConfigFromServer 异常", e)
@@ -148,8 +148,11 @@ class AdConfigRepositoryImpl(
     override suspend fun getCodeId(placement: AdPlacement): String {
         val channel = adSdkManager.currentChannel
         val remote = readCachedConfig()
-        // 仅当远程 adType 与当前通道一致时才使用远程代码位（避免 GDT 代码位给 CSJ 用）
+        // 仅当远程 adType 与当前通道一致时才使用远程代码位
         val effectiveRemote = remote?.takeIf { it.adType == channel.code }
+        // 开屏广告：CSJ 通道优先使用远程下发的原生代码位（如 104221504），
+        // 因为本地 GroMore 聚合代码位（19910070）在 SDK 内部可能无法触发回调。
+        // 其他广告位正常使用远程/本地代码位。
         return AdCodeIdResolver.resolve(channel, placement, effectiveRemote)
     }
 
@@ -159,7 +162,7 @@ class AdConfigRepositoryImpl(
         private const val TAG = "AdConfigRepo"
         /** 对齐 flutter_merge MergeRemoteConfig.REMOTE_AD_CHANNEL_URL */
         private const val REMOTE_AD_CONFIG_URL = "https://adsign.manxinghai.cn/api/app/getAdConfig"
-        private const val CONFIG_TIMEOUT_MS = 8000
+        private const val CONFIG_TIMEOUT_MS = 3000
         private const val PREFS_NAME = "ad_remote_config"
         private const val KEY_AD_TYPE = "ad_type"
         private const val KEY_AD_CODE = "ad_code"

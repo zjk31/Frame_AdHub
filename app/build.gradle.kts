@@ -41,6 +41,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -92,6 +93,7 @@ dependencies {
     implementation(libs.koin.android)
     implementation(libs.koin.compose)
     implementation(libs.koin.compose.viewmodel)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // TODO: 添加 @Module 注解类后取消注释
     // implementation(libs.koin.annotations)
     // ksp(libs.koin.ksp.compiler)
@@ -104,6 +106,12 @@ dependencies {
 
     // ── Image ──
     implementation(libs.coil.compose)
+
+    // ── Room (本地数据库) ──
+    val roomVersion = "2.7.2"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion")
 
     // ── Testing ──
     testImplementation(libs.junit)

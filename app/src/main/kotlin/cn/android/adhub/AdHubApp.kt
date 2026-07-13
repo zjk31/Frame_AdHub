@@ -6,6 +6,7 @@ import cn.android.adhub.core.AppContextHolder
 import cn.android.adhub.data.AdSdkManager
 import cn.android.adhub.data.provider.csj.CsjConfig
 import cn.android.adhub.di.adModule
+import cn.android.adhub.di.mangaModule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,7 +31,7 @@ class AdHubApp : Application() {
         // 1. 启动 Koin DI 容器
         startKoin {
             androidContext(this@AdHubApp)
-            modules(adModule)
+            modules(adModule, mangaModule)
         }
 
         // 2. 异步调用 ensureProviderReady() 使 SDK 完全就绪

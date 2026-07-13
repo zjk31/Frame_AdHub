@@ -517,18 +517,23 @@ class CsjAdProvider(
             val dm = activity.resources.displayMetrics
             val screenW = dm.widthPixels
             val screenH = dm.heightPixels
-            // SDK 7.5.x+: 仅需 setExpressViewAcceptedSize(dp)
-            val adSlot = AdSlot.Builder()
+
+            val slotBuilder = AdSlot.Builder()
                 .setCodeId(codeId)
                 .setExpressViewAcceptedSize(screenW / dm.density, screenH / dm.density)
-                .setAdLoadType(TTAdLoadType.PRELOAD)
-                .setMediationAdSlot(
-                    com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot.Builder()
-                        .setMediationSplashRequestInfo(CsjConfig.buildSplashFallback())
-                        .setExtraObject("show_adn_load_error_detail", true)
-                        .build()
-                )
-                .build()
+
+            // 统一使用 GroMore 聚合模式：setMediationAdSlot + setMediationSplashRequestInfo
+            // 参考项目 flutter_merge 的 loadSplashAdCsj 始终使用 setMediationAdSlot
+            val fallback = CsjConfig.buildSplashFallback()
+            android.util.Log.i(TAG, "开屏 GroMore 模式: codeId=$codeId")
+            slotBuilder.setMediationAdSlot(
+                com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot.Builder()
+                    .setMediationSplashRequestInfo(fallback)
+                    .setExtraObject("show_adn_load_error_detail", true)
+                    .build()
+            )
+
+            val adSlot = slotBuilder.build()
 
             val adNative = TTAdSdk.getAdManager().createAdNative(activity)
 
@@ -611,7 +616,7 @@ class CsjAdProvider(
     }
 
     companion object {
-        private const val SPLASH_TIMEOUT_MS = 5000
+        private const val SPLASH_TIMEOUT_MS = 10_000
         private const val REWARD_TIMEOUT_MS = 30_000L
         private const val GRO_MORE_DELAY_MS = 3000L  // isSdkReady 后等 GroMore 配置下载
         private const val TAG = "CsjAdProvider"

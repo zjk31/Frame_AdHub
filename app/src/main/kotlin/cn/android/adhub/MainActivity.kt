@@ -3,30 +3,58 @@ package cn.android.adhub
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import cn.android.adhub.di.adModule
+import cn.android.adhub.di.mangaModule
 import cn.android.adhub.ui.AdHubApp
-import org.koin.android.ext.android.inject
+import org.koin.core.context.startKoin
+import org.koin.core.context.GlobalContext
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
- * 单 Activity 架构。
+ * 漫画 App 主界面（备用入口）。
  *
- * 冷启动由 [SplashAdActivity] 管理（系统启动页 → 广告 → 跳转本 Activity）。
- * 本 Activity 使用 [LaunchTheme] 确保 Window 创建时立即绘制 #F5F5F5 背景，
- * 与 Compose [AdHubTheme] 的 background 色值一致，消除 Activity 切换白屏。
+ * 正常用户流程由 [SplashAdActivity]（LAUNCHER）承载：
+ * SplashAdActivity 内嵌的 ComposeView 同样渲染 [AdHubApp]。
+ * 本 Activity 作为 adb 调试入口或 SplashAdActivity 降级跳转目标。
  */
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), KoinComponent {
 
-    private val hotStartManager: cn.android.adhub.core.HotStartInterstitialManager by inject()
+    private val messageRepository: cn.android.adhub.data.sse.MessageRepository by inject()
+    private val appUpdateChecker: cn.android.adhub.data.update.AppUpdateChecker by inject()
+    private val userSession: cn.android.adhub.data.repository.UserSession by inject()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 初始化 Koin（如果尚未初始化）
+        initKoin()
+
+        // 后台加载用户会话 + SSE + 版本检查
+        MainScope().launch(Dispatchers.IO) {
+            userSession.load()
+            messageRepository.init()
+            appUpdateChecker.check(autoCheck = true)
+        }
+
         setContent {
             AdHubApp()
         }
-        hotStartManager.bindActivity(this)
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        hotStartManager.unbindActivity(this)
+        messageRepository.disconnect()
+    }
+
+    private fun initKoin() {
+        if (GlobalContext.getOrNull() == null) {
+            startKoin {
+                modules(adModule, mangaModule)
+            }
+        }
     }
 }
