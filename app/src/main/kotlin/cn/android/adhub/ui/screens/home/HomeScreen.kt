@@ -148,36 +148,28 @@ private fun MangaCategoryTabs(
 ) {
     val displayCategories = listOf("全部") + categories + allCategories.map { it.name }
 
-    ScrollableTabRow(
-        selectedTabIndex = selectedIndex,
-        containerColor = MaterialTheme.colorScheme.background,
-        contentColor = MaterialTheme.colorScheme.primary,
-        edgePadding = 8.dp,
-        divider = {},
-        indicator = { /* 去掉下划线 */ },
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        displayCategories.forEachIndexed { index, name ->
+        items(displayCategories.size) { index ->
+            val name = displayCategories[index]
             val selected = index == selectedIndex
-            Tab(
-                selected = selected,
-                onClick = { onSelect(index) },
-                modifier = Modifier.wrapContentSize()
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = if (selected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surface,
+                modifier = Modifier.clickable { onSelect(index) }
             ) {
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = if (selected) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.surface,
-                ) {
-                    Text(
-                        text = name,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                        fontSize = 14.sp,
-                        maxLines = 1,
-                        color = if (selected) MaterialTheme.colorScheme.onPrimary
-                                else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                    )
-                }
+                Text(
+                    text = name,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    color = if (selected) MaterialTheme.colorScheme.onPrimary
+                            else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 9.dp)
+                )
             }
         }
     }
