@@ -28,7 +28,7 @@ class MangaImageFetcher(
         }
 
         val encrypted = response.body!!.bytes()
-        val decrypted = MangaImageDecryptor.decrypt(encrypted)
+        val decrypted = MangaImageDecryptor.restoreIfNeeded(encrypted)
 
         val source = Buffer().write(decrypted)
         val imageSource = coil3.decode.ImageSource(

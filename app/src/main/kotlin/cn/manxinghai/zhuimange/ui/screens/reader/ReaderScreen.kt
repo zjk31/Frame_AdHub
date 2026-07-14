@@ -5,9 +5,8 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -29,11 +28,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import cn.manxinghai.zhuimange.core.MangaImageDecryptor
 import cn.manxinghai.zhuimange.domain.model.ChapterPage
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
+import java.util.concurrent.TimeUnit
 
 @Composable
 fun ReaderScreen(
@@ -140,28 +145,20 @@ private fun ReaderContent(
     onPageChanged: (Int) -> Unit,
     onTap: () -> Unit
 ) {
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = currentPage)
+    val scrollState = rememberScrollState()
 
+    // 自动翻页滚动
     LaunchedEffect(currentPage) {
-        if (currentPage != listState.firstVisibleItemIndex) {
-            listState.animateScrollToItem(currentPage)
-        }
+        val pageHeight = scrollState.viewportSize
+        if (pageHeight > 0) scrollState.animateScrollTo(pageHeight * currentPage)
     }
 
-    LaunchedEffect(listState) {
-        snapshotFlow { listState.firstVisibleItemIndex }
-            .collect { page ->
-                if (page in pages.indices) onPageChanged(page)
-            }
-    }
-
-    val screenHeight = LocalConfiguration.current.screenHeightDp.dp
-
-    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-        itemsIndexed(pages) { _, pageData ->
-            Box(
-                modifier = Modifier.fillMaxWidth().height(screenHeight)
-                    .pointerInput(Unit) { detectTapGestures(onTap = { onTap() }) }
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(scrollState)
+    ) {
+        pages.forEachIndexed { index, pageData ->
+            Box(modifier = Modifier.fillMaxWidth()
+                .pointerInput(Unit) { detectTapGestures(onTap = { onTap() }) }
             ) {
                 MangaPageView(imageUrl = pageData.imageUrl)
             }
@@ -169,15 +166,40 @@ private fun ReaderContent(
     }
 }
 
-/** 漫画单页 — AsyncImage 直连，Coil 自定义 Fetcher 透明解密 */
+private val imageClient = OkHttpClient.Builder()
+    .connectTimeout(15, TimeUnit.SECONDS)
+    .readTimeout(30, TimeUnit.SECONDS)
+    .build()
+
 @Composable
 private fun MangaPageView(imageUrl: String) {
-    AsyncImage(
-        model = imageUrl,
-        contentDescription = null,
-        contentScale = ContentScale.FillWidth,
-        modifier = Modifier.fillMaxWidth()
-    )
+    var imgBytes by remember(imageUrl) { mutableStateOf<ByteArray?>(null) }
+
+    LaunchedEffect(imageUrl) {
+        withContext(Dispatchers.IO) {
+            try {
+                val resp = imageClient.newCall(Request.Builder().url(imageUrl).build()).execute()
+                if (resp.isSuccessful && resp.body != null) {
+                    imgBytes = MangaImageDecryptor.restoreIfNeeded(resp.body!!.bytes())
+                }
+            } catch (_: Exception) { }
+        }
+    }
+
+    if (imgBytes != null) {
+        AsyncImage(
+            model = imgBytes,
+            contentDescription = null,
+            contentScale = ContentScale.FillWidth,
+            modifier = Modifier.fillMaxWidth()
+        )
+    } else {
+        Box(Modifier.fillMaxWidth().height(300.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Color.White)
+            }
+        }
+    }
 }
 
 // ===== UI 组件（保持不变） =====
