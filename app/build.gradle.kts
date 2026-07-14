@@ -7,24 +7,39 @@ plugins {
 }
 
 android {
-    namespace = "cn.maga.lingdongmanhua"
+    namespace = "cn.manxinghai.zhuimange"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "cn.maga.lingdongmanhua"
+        applicationId = "cn.manxinghai.zhuimange"
         minSdk = 34
         targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // 对应 Flutter --dart-define=MANAPP_BASE_URL=...
+        // 构建时可通过 -PMANAPP_BASE_URL=http://xxx 覆盖
+        val manappBaseUrl = project.findProperty("MANAPP_BASE_URL") as? String
+            ?: "http://app-v1.manxinghai.cn/"
+        buildConfigField("String", "MANAPP_BASE_URL", "\"$manappBaseUrl\"")
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file("zhuimange.jks")
+            storePassword = "1qaz2wsx"
+            keyAlias = "manxingkong"
+            keyPassword = "1qaz2wsx"
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -115,8 +130,9 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
 
-    // ── Image ──
+    // ── Image（Coil 3 + OkHttp 网络引擎） ──
     implementation(libs.coil.compose)
+    implementation("io.coil-kt.coil3:coil-network-okhttp:3.1.0")
 
     // ── Room (本地数据库) ──
     val roomVersion = "2.7.2"
