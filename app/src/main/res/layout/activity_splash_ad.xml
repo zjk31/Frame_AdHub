@@ -1,10 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  开屏广告 Activity 布局。
-  使用 AndroidX SplashScreen 作为唯一加载页，布局仅用于承载广告。
--->
+<!-- 完全对齐 flutter_merge activity_splash_ad.xml -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/splash_ad_container"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@color/launch_bg" />
+    android:layout_height="match_parent">
+
+    <!-- 广告容器（初始隐藏） -->
+    <FrameLayout
+        android:id="@+id/splash_ad_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
+    <!-- loading 面板（初始可见，盖住广告容器） -->
+    <LinearLayout
+        android:id="@+id/splash_loading_panel"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:background="@color/launch_bg" />
+
+</FrameLayout>

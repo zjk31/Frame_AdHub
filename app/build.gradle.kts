@@ -7,12 +7,12 @@ plugins {
 }
 
 android {
-    namespace = "cn.android.adhub"
+    namespace = "cn.maga.lingdongmanhua"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "cn.android.adhub"
-        minSdk = 26
+        applicationId = "cn.maga.lingdongmanhua"
+        minSdk = 34
         targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
