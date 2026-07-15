@@ -61,12 +61,8 @@ fun DetailScreen(
                 )
             }
         }
-    ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
+    ) { _ ->
+        Box(modifier = Modifier.fillMaxSize()) {
             when {
                 ui.isLoading -> LoadingIndicator()
                 ui.error != null -> ErrorView(ui.error!!, onRetry = viewModel::refresh)

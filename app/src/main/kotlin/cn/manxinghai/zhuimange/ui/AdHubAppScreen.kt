@@ -1,6 +1,7 @@
 package cn.manxinghai.zhuimange.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -8,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -54,7 +56,14 @@ private fun MangaAppContent() {
         )
     } ?: true
 
+    // 全屏页（详情/阅读器）去掉系统栏边距，导航页保留
+    val isFullScreen = currentDestination?.route?.let { route ->
+        route.startsWith("manga_detail") || route.startsWith("manga_reader")
+    } ?: false
+
     Scaffold(
+        contentWindowInsets = if (isFullScreen) WindowInsets(0.dp, 0.dp, 0.dp, 0.dp)
+                              else ScaffoldDefaults.contentWindowInsets,
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar(
