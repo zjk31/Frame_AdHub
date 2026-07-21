@@ -85,6 +85,17 @@
                 android:resource="@xml/bd_file_paths" />
         </provider>
 
+        <!-- 应用更新 APK 安装 FileProvider -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.update.provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_file_paths" />
+        </provider>
+
         <!-- 友盟 AppKey -->
         <meta-data
             android:name="UMENG_APPKEY"

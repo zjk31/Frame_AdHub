@@ -7,11 +7,11 @@ plugins {
 }
 
 android {
-    namespace = "cn.android.adhub"
+    namespace = "cn.manxinghai.zhuimange"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "cn.android.adhub"
+        applicationId = "cn.manxinghai.zhuimange"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
@@ -41,6 +41,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

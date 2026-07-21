@@ -24,3 +24,7 @@ local.properties
 
 # OS
 Thumbs.db
+
+# Harness
+.harness/local/
+docs/temp/
