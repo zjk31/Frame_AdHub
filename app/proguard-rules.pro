@@ -52,6 +52,14 @@
 -keep class org.koin.** { *; }
 -dontwarn org.koin.**
 
-# ── Gson (模型类保持不被混淆) ──
--keep class com.example.adhub.data.remote.dto.** { *; }
--keep class com.example.adhub.domain.model.** { *; }
+# ── Gson 序列化 ──
+-keep class cn.manxinghai.zhuimange.data.dto.** { *; }
+-keep class cn.manxinghai.zhuimange.data.remote.** { *; }
+-keep class cn.manxinghai.zhuimange.domain.model.** { *; }
+-keep class cn.manxinghai.zhuimange.domain.repository.** { *; }
+-keep class cn.manxinghai.zhuimange.data.repository.AdConfigRepositoryImpl { *; }
+
+# ── 应用核心类 ──
+-keep class cn.manxinghai.zhuimange.MainActivity { *; }
+-keep class cn.manxinghai.zhuimange.SplashAdActivity { *; }
+-keep class cn.manxinghai.zhuimange.AdHubApp { *; }

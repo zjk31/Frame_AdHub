@@ -1,6 +1,7 @@
 package cn.manxinghai.zhuimange.ui.screens.interstitial
 
 import android.app.Activity
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cn.manxinghai.zhuimange.data.AdSdkManager
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+@Immutable
 data class InterstitialUiState(
     val isLoading: Boolean = false,
     val channelName: String = "",

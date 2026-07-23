@@ -6,17 +6,20 @@ import cn.manxinghai.zhuimange.domain.model.AdPlacement
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * 广告配置仓库接口：远程配置拉取 + 代码位解析。
+ * 广告配置仓库接口：配置读取 + 代码位解析。
+ *
+ * 骨架实现为纯本地 SharedPreferences 读取。
+ * 子 App 可替换为网络实现，只需在写入缓存后调用 [fetchAdConfig]。
  */
 interface AdConfigRepository {
 
     /** 配置版本号，每次 [fetchAdConfig] 更新后递增，UI 层可 collect 响应变化。 */
     val configVersion: StateFlow<Int>
 
-    /** 从远程 API 拉取当前应使用的广告通道。 */
+    /** 从本地缓存读取当前应使用的广告通道。子 App 实现可改为网络拉取。 */
     suspend fun fetchRemoteChannel(): Result<AdChannel>
 
-    /** 对齐 flutter_merge：拉取完整广告配置（含各代码位），失败返回 null。 */
+    /** 读取完整广告配置（含各代码位），若无缓存返回 null。 */
     suspend fun fetchAdConfig(): RemoteConfigData?
 
     /** 查询当前通道下 [placement] 对应的代码位 ID。

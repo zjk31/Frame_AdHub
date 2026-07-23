@@ -93,9 +93,7 @@ dependencies {
     implementation(libs.koin.android)
     implementation(libs.koin.compose)
     implementation(libs.koin.compose.viewmodel)
-    // TODO: 添加 @Module 注解类后取消注释
-    // implementation(libs.koin.annotations)
-    // ksp(libs.koin.ksp.compiler)
+    // Koin Annotations 不在本骨架使用——统一用 DSL
 
     // ── Network ──
     implementation(libs.retrofit)
@@ -103,8 +101,14 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
 
-    // ── Image ──
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    // ── Image（Coil 3 + OkHttp 网络引擎） ──
     implementation(libs.coil.compose)
+    implementation("io.coil-kt.coil3:coil-network-okhttp:3.1.0")
+
+    // OAID 设备标识
+    implementation("com.github.gzu-liyujiang:Android_CN_OAID:4.2.11")
 
     // ── Testing ──
     testImplementation(libs.junit)

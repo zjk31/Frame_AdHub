@@ -2,6 +2,7 @@ package cn.manxinghai.zhuimange.ui.screens.banner
 
 import android.app.Activity
 import android.view.View
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cn.manxinghai.zhuimange.data.AdSdkManager
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
+@Immutable
 data class BannerUiState(
     val adState: AdLoadState<View> = AdLoadState.Loading,
     val channelName: String = "",

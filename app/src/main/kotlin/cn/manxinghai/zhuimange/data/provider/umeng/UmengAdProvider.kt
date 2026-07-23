@@ -43,6 +43,8 @@ class UmengAdProvider : AdProvider {
                 UMUnionSdk.init(app)
             }
             initialized = true
+            // UM SDK 就绪后尝试用 UMID 覆盖本地 inviteCode
+            cn.manxinghai.zhuimange.core.InviteCodeManager.tryRefreshFromUmeng(app)
             android.util.Log.i(TAG, "Umeng SDK init done, appKey=${UmengConfig.APP_KEY}")
             Result.success(Unit)
         } catch (e: Exception) {
@@ -59,7 +61,7 @@ class UmengAdProvider : AdProvider {
 
     // ── Banner（对齐 flutter_merge: XML 布局 + 下载图片 + bindView） ──
 
-    override fun loadBanner(codeId: String, activity: Activity?): StateFlow<AdLoadState<View>> {
+    override fun loadBanner(codeId: String, activity: Activity?, expressHeightDp: Float?): StateFlow<AdLoadState<View>> {
         val state = MutableStateFlow<AdLoadState<View>>(AdLoadState.Loading)
         val ctx = AppContextHolder.context
 

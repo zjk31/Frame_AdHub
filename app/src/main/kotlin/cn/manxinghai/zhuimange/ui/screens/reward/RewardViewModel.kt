@@ -1,6 +1,7 @@
 package cn.manxinghai.zhuimange.ui.screens.reward
 
 import android.app.Activity
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cn.manxinghai.zhuimange.data.AdSdkManager
@@ -16,6 +17,7 @@ import kotlinx.coroutines.launch
 /**
  * 激励视频页面状态。
  */
+@Immutable
 data class RewardUiState(
     val isLoading: Boolean = true,
     val channelName: String = "",

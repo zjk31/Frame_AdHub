@@ -73,7 +73,7 @@ class BaiduAdProvider(
     override fun isReady(): Boolean = initialized
     override fun revokePrivacyConsent(context: Context) {}
 
-    override fun loadBanner(codeId: String, activity: Activity?): StateFlow<AdLoadState<View>> {
+    override fun loadBanner(codeId: String, activity: Activity?, expressHeightDp: Float?): StateFlow<AdLoadState<View>> {
         val state = MutableStateFlow<AdLoadState<View>>(AdLoadState.Loading)
         val ctx = AppContextHolder.context
         val act = activity ?: ctx as? Activity
@@ -368,8 +368,8 @@ class BaiduAdProvider(
             // true = 竜屏
             val ad = RewardVideoAd(activity, codeId, listener, true)
             adRef = ad
-            val uid = tokenRepo.cachedUserId?.toString()
-            if (!uid.isNullOrEmpty()) ad.setUserId(uid)
+            val uid = cn.manxinghai.zhuimange.core.InviteCodeManager.get()
+            if (uid.isNotBlank()) ad.setUserId(uid)
             ad.load()
         }
     }

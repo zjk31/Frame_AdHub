@@ -52,7 +52,7 @@ class GdtAdProvider : AdProvider {
         GDTAdSdk.init(context.applicationContext, GdtConfig.APP_ID)
     }
 
-    override fun loadBanner(codeId: String, activity: Activity?): StateFlow<AdLoadState<View>> {
+    override fun loadBanner(codeId: String, activity: Activity?, expressHeightDp: Float?): StateFlow<AdLoadState<View>> {
         val state = MutableStateFlow<AdLoadState<View>>(AdLoadState.Loading)
         val ctx = AppContextHolder.context
         val act = activity ?: ctx as? Activity

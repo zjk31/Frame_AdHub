@@ -1,6 +1,7 @@
 package cn.manxinghai.zhuimange.data.provider.csj
 
 import android.content.Context
+import android.util.Log
 import com.bytedance.sdk.openadsdk.TTAdConfig
 import com.bytedance.sdk.openadsdk.TTCustomController
 import com.bytedance.sdk.openadsdk.mediation.init.MediationPrivacyConfig
@@ -20,14 +21,6 @@ object CsjConfig {
     const val AD_SLOT_DOWNLOAD_QUOTA_REWARD_VIDEO = "104244399"
     const val AD_SLOT_INTERSTITIAL = "104246719"
     const val AD_FREE_CODE_ID = "104246621"
-
-    /** 开屏广告 GroMore 瀑布流兜底信息。 */
-    fun buildSplashFallback(): com.bytedance.sdk.openadsdk.mediation.ad.MediationSplashRequestInfo {
-        return object : com.bytedance.sdk.openadsdk.mediation.ad.MediationSplashRequestInfo(
-            com.bytedance.sdk.openadsdk.mediation.MediationConstant.ADN_PANGLE,
-            "", "", ""
-        ) {}
-    }
 
     /** 构建 TTAdConfig — GroMore 聚合模式，对齐 flutter_merge。 */
     fun buildAdConfig(context: Context): TTAdConfig = TTAdConfig.Builder()
@@ -51,4 +44,6 @@ object CsjConfig {
             }
         })
         .build()
+
+    private const val TAG = "CsjConfig"
 }

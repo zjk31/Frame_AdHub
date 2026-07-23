@@ -15,13 +15,18 @@ import com.bytedance.sdk.openadsdk.TTAdNative
 import com.bytedance.sdk.openadsdk.TTAdSdk
 import com.bytedance.sdk.openadsdk.TTNativeExpressAd
 import com.bytedance.sdk.openadsdk.TTRewardVideoAd
+import com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot
+import com.bytedance.sdk.openadsdk.mediation.ad.MediationSplashRequestInfo
+import com.bytedance.sdk.openadsdk.mediation.MediationConstant
 import cn.manxinghai.zhuimange.core.AppContextHolder
+import cn.manxinghai.zhuimange.core.InviteCodeManager
 import cn.manxinghai.zhuimange.domain.model.AdLoadState
 import cn.manxinghai.zhuimange.domain.model.RewardResult
 import cn.manxinghai.zhuimange.domain.provider.AdProvider
 import com.bytedance.sdk.openadsdk.TTFullScreenVideoAd
 import com.bytedance.sdk.openadsdk.TTFeedAd
 import com.bytedance.sdk.openadsdk.TTNativeAd
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -31,23 +36,55 @@ class CsjAdProvider(
     private val tokenRepo: cn.manxinghai.zhuimange.domain.repository.TokenRepository,
 ) : AdProvider {
 
-    // ── 公开初始化入口（委托给 CsjAdSdkManager 单例，对齐 flutter_merge） ──
+    @Volatile private var initialized = false
+    @Volatile private var starting = false
+    @Volatile private var started = false
+
+    // ── 初始化（自包含，不依赖 CsjAdSdkManager）──
 
     override suspend fun initialize(context: Context): Result<Unit> {
-        CsjAdSdkManager.initIfNeeded(context)
+        initIfNeeded(context)
+        return ensureReady()
+    }
+
+    private fun initIfNeeded(context: Context) {
+        if (initialized) return
+        val config = CsjConfig.buildAdConfig(context)
+        val initResult = TTAdSdk.init(context.applicationContext, config)
+        android.util.Log.i(TAG, "TTAdSdk.init result=$initResult appId=${CsjConfig.APP_ID} isSdkReady=${TTAdSdk.isSdkReady()}")
+        initialized = true
+    }
+
+    private suspend fun ensureReady(): Result<Unit> {
+        if (started && isReady()) return Result.success(Unit)
+
+        val shouldStart = synchronized(this) {
+            if (starting || (started && isReady())) false
+            else { starting = true; true }
+        }
+        if (!shouldStart) {
+            var waited = 0
+            while (waited < 3000 && !isReady()) {
+                delay(50)
+                waited += 50
+            }
+            return if (isReady()) Result.success(Unit)
+                   else Result.failure(Exception("CSJ SDK ready timeout"))
+        }
+
         return suspendCancellableCoroutine { cont ->
-            CsjAdSdkManager.ensureReady(context, object : CsjAdSdkManager.ReadyCallback {
-                override fun onReady() {
-                    if (cont.isActive) cont.resume(Result.success(Unit))
+            TTAdSdk.start(object : TTAdSdk.Callback {
+                override fun success() {
+                    synchronized(this@CsjAdProvider) { started = true; starting = false }
+                    if (cont.isActive) waitForSdkReady(cont, 0)
                 }
-                override fun onFailed() {
-                    if (cont.isActive) cont.resume(Result.failure(Exception("CSJ SDK 初始化失败")))
+                override fun fail(code: Int, msg: String) {
+                    synchronized(this@CsjAdProvider) { started = false; starting = false }
+                    if (cont.isActive) cont.resume(Result.failure(Exception("CSJ start failed[$code]: $msg")))
                 }
             })
         }
     }
-
-    // ── SDK 状态检查 ──
 
     override fun isReady(): Boolean {
         return try {
@@ -55,16 +92,52 @@ class CsjAdProvider(
         } catch (_: Exception) { false }
     }
 
-    override fun revokePrivacyConsent(context: Context) {
-        CsjAdSdkManager.revokePrivacyConsent(context)
+    private fun waitForSdkReady(
+        cont: kotlinx.coroutines.CancellableContinuation<Result<Unit>>,
+        tries: Int,
+    ) {
+        if (isReady()) {
+            synchronized(this@CsjAdProvider) {
+                started = true
+                starting = false
+            }
+            android.util.Log.e(TAG, "SDK ready at try=$tries")
+            if (cont.isActive) cont.resume(Result.success(Unit))
+            return
+        }
+        if (tries >= 20) {
+            synchronized(this@CsjAdProvider) {
+                starting = false
+            }
+            android.util.Log.e(TAG, "SDK ready TIMEOUT after $tries tries")
+            if (cont.isActive) cont.resume(Result.failure(Exception("CSJ SDK ready timeout")))
+            return
+        }
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            if (cont.isActive) waitForSdkReady(cont, tries + 1)
+        }, 120)
     }
 
-    override fun loadBanner(codeId: String, activity: Activity?): StateFlow<AdLoadState<View>> {
+    override fun revokePrivacyConsent(context: Context) {
+        synchronized(this) {
+            initialized = false
+            starting = false
+            started = false
+        }
+    }
+
+    // ── Banner（GroMore 聚合模式）──
+
+    override fun loadBanner(codeId: String, activity: Activity?, expressHeightDp: Float?): StateFlow<AdLoadState<View>> {
         val state = MutableStateFlow<AdLoadState<View>>(AdLoadState.Loading)
         val ctx = AppContextHolder.context
         val density = ctx.resources.displayMetrics.density
+        val screenW = ctx.resources.displayMetrics.widthPixels
+        val screenWDp = screenW / density
 
-        // 容器：对齐 flutter_merge MATCH_PARENT x MATCH_PARENT + clipChildren
+        // 用指定高度或默认屏幕宽的一半
+        val exprHeightDp = expressHeightDp ?: (screenWDp / 2f)
+
         val container = FrameLayout(ctx).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -76,27 +149,19 @@ class CsjAdProvider(
         }
         state.value = AdLoadState.Loaded(container)
 
-        // 等容器测量后再加载广告，避免宽高为 0
         container.post {
             val cw = container.width
             val ch = container.height
-            val wPx = if (cw > 0) cw else ctx.resources.displayMetrics.widthPixels
-            val hPx = Math.max(1, Math.round((if (ch > 0) ch / density else 75f) * density))
-            val widthDp = wPx / density
-            val heightDp = hPx.toFloat() / density
 
+            // GroMore 聚合模式：setMediationAdSlot
             val adSlot = AdSlot.Builder()
                 .setCodeId(codeId)
-                .setImageAcceptedSize(wPx, hPx)
-                .setExpressViewAcceptedSize(widthDp, heightDp)
-                .setMediationAdSlot(
-                    com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot.Builder()
-                        .setExtraObject("show_adn_load_error_detail", true)
-                        .build()
-                )
+                .setImageAcceptedSize(Math.max(1, screenW), Math.max(1, (exprHeightDp * density).toInt()))
+                .setExpressViewAcceptedSize(screenWDp, exprHeightDp)
+                .setMediationAdSlot(MediationAdSlot.Builder().build())
                 .build()
 
-            android.util.Log.e(TAG, "Banner load: codeId=$codeId cw=$cw ch=$ch wDp=$widthDp hDp=$heightDp")
+            android.util.Log.e(TAG, "Banner load(GroMore): codeId=$codeId exprH=$exprHeightDp cw=$cw ch=$ch")
             val adNative = TTAdSdk.getAdManager().createAdNative(ctx)
             adNative.loadBannerExpressAd(adSlot, object : TTAdNative.NativeExpressAdListener {
                 override fun onError(errorCode: Int, errorMsg: String) {
@@ -122,25 +187,10 @@ class CsjAdProvider(
                             renderView.setPadding(0, 0, 0, 0)
                             container.post {
                                 container.removeAllViews()
-                                val rw = if (width > 0f) width.toInt() else 0
-                                val rh = if (height > 0f) height.toInt() else 0
-                                val lp = when {
-                                    cw > 0 && ch > 0 && rw > 0 && rh > 0 && (rw > cw || rh > ch) -> {
-                                        val scale = minOf(cw.toFloat() / rw, ch.toFloat() / rh)
-                                        FrameLayout.LayoutParams(
-                                            maxOf(1, (rw * scale).toInt()),
-                                            maxOf(1, (rh * scale).toInt()),
-                                            Gravity.CENTER,
-                                        )
-                                    }
-                                    rw > 0 && rh > 0 && cw > 0 && ch > 0 ->
-                                        FrameLayout.LayoutParams(rw, rh, Gravity.CENTER)
-                                    else -> FrameLayout.LayoutParams(
-                                        ViewGroup.LayoutParams.MATCH_PARENT,
-                                        ViewGroup.LayoutParams.MATCH_PARENT,
-                                    )
-                                }
-                                container.addView(renderView, lp)
+                                container.addView(renderView, FrameLayout.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                ))
                             }
                         }
                     })
@@ -150,40 +200,37 @@ class CsjAdProvider(
         }
         return state
     }
+
+    // ── Feed（GroMore 聚合模式）──
+
     override fun loadFeed(codeId: String, count: Int): StateFlow<AdLoadState<List<View>>> {
         val state = MutableStateFlow<AdLoadState<List<View>>>(AdLoadState.Loading)
         val ctx = AppContextHolder.context
 
         val density = ctx.resources.displayMetrics.density
-        // 对齐 flutter_merge: rootView 始终在视图树，先返回容器让 Compose 挂载
         val container = FrameLayout(ctx).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                (420f * density).toInt(),  // 固定高度 420dp
+                (420f * density).toInt(),
             )
             setPadding(0, 0, 0, 0)
             setClipChildren(true)
             setClipToPadding(true)
         }
-        // 立即把容器发出去，Compose AndroidView 才能挂载它
         state.value = AdLoadState.Loaded(listOf(container))
 
-        // container.post: 挂载后执行加载，此时 container.width 有值
         container.post {
             val screenW = if (container.width > 0) container.width
                 else ctx.resources.displayMetrics.widthPixels
+
             val adSlot = AdSlot.Builder()
                 .setCodeId(codeId)
                 .setImageAcceptedSize(Math.max(1, screenW), 0)
                 .setAdCount(3)
-                .setMediationAdSlot(
-                    com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot.Builder()
-                        .setMuted(false)
-                        .build()
-                )
+                .setMediationAdSlot(MediationAdSlot.Builder().build())
                 .build()
 
-            android.util.Log.e(TAG, "Feed load: codeId=$codeId sw=$screenW")
+            android.util.Log.e(TAG, "Feed load(GroMore): codeId=$codeId sw=$screenW")
             val adNative = TTAdSdk.getAdManager().createAdNative(ctx)
             adNative.loadFeedAd(adSlot, object : TTAdNative.FeedAdListener {
                 override fun onError(errorCode: Int, errorMsg: String?) {
@@ -216,6 +263,9 @@ class CsjAdProvider(
         }
         return state
     }
+
+    // ── 插屏（GroMore 聚合模式）──
+
     override suspend fun showInterstitial(activity: Activity, codeId: String): Boolean {
         if (activity.isFinishing || activity.isDestroyed) return false
         if (codeId.isEmpty()) return false
@@ -227,11 +277,7 @@ class CsjAdProvider(
                 .setCodeId(codeId)
                 .setOrientation(TTAdConstant.VERTICAL)
                 .setAdLoadType(TTAdLoadType.LOAD)
-                .setMediationAdSlot(
-                    com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot.Builder()
-                        .setExtraObject("show_adn_load_error_detail", true)
-                        .build()
-                )
+                .setMediationAdSlot(MediationAdSlot.Builder().build())
                 .build()
 
             adNative.loadFullScreenVideoAd(adSlot, object : TTAdNative.FullScreenVideoAdListener {
@@ -242,16 +288,13 @@ class CsjAdProvider(
                     if (cont.isActive) cont.resume(false)
                 }
 
-                override fun onFullScreenVideoAdLoad(ad: com.bytedance.sdk.openadsdk.TTFullScreenVideoAd) {
-                    // 加载成功，等待 onFullScreenVideoCached
-                }
+                override fun onFullScreenVideoAdLoad(ad: TTFullScreenVideoAd) {}
 
                 override fun onFullScreenVideoCached() {}
 
-                override fun onFullScreenVideoCached(ad: com.bytedance.sdk.openadsdk.TTFullScreenVideoAd) {
+                override fun onFullScreenVideoCached(ad: TTFullScreenVideoAd) {
                     if (activity.isFinishing || activity.isDestroyed || !cont.isActive) return
 
-                    // ECPM 日志
                     try {
                         val extra = ad.mediaExtraInfo
                         if (extra != null) {
@@ -260,7 +303,7 @@ class CsjAdProvider(
                     } catch (_: Throwable) {}
 
                     ad.setFullScreenVideoAdInteractionListener(object :
-                        com.bytedance.sdk.openadsdk.TTFullScreenVideoAd.FullScreenVideoAdInteractionListener {
+                        TTFullScreenVideoAd.FullScreenVideoAdInteractionListener {
                         override fun onAdShow() {
                             shown = true
                             android.util.Log.d(TAG, "插屏 onAdShow")
@@ -288,9 +331,8 @@ class CsjAdProvider(
         }
     }
 
-    // ── 激励视频 ──
-    // 参考 flutter_merge CsjReadRewardVideoActivity:
-    // loadRewardVideoAd → onRewardVideoCached(ad) → ad.showRewardVideoAd(activity)
+    // ── 激励视频（GroMore 聚合模式）──
+
     override suspend fun showRewardVideo(
         activity: Activity, codeId: String, slotKey: String,
     ): RewardResult {
@@ -313,22 +355,17 @@ class CsjAdProvider(
 
             val adSlot = AdSlot.Builder()
                 .setCodeId(codeId)
-                .setUserID(tokenRepo.cachedUserId?.toString() ?: "")
+                .setUserID(InviteCodeManager.get())
                 .setRewardName(rewardName)
                 .setOrientation(TTAdConstant.VERTICAL)
                 .setAdLoadType(TTAdLoadType.LOAD)
-                .setMediationAdSlot(
-                    com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot.Builder()
-                        .setExtraObject("show_adn_load_error_detail", true)
-                        .build()
-                )
+                .setMediationAdSlot(MediationAdSlot.Builder().build())
                 .build()
 
             var adRef: TTRewardVideoAd? = null
             var shown = false
             var rewardGranted = false
 
-            // 30 秒超时兜底
             val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
             val timeoutRunnable = Runnable {
                 if (cont.isActive) {
@@ -342,9 +379,8 @@ class CsjAdProvider(
                 adRef = null
             }
 
-            /** 对齐 flutter_merge handleAd：设置监听器 */
             fun handleAd(ad: TTRewardVideoAd) {
-                if (adRef != null) return // 已处理过
+                if (adRef != null) return
                 adRef = ad
                 try {
                     val extra = ad.mediaExtraInfo
@@ -355,7 +391,6 @@ class CsjAdProvider(
                     override fun onAdShow() { shown = true }
                     override fun onAdVideoBarClick() {}
                     override fun onAdClose() {
-                        // 不立即 resume——等 onRewardArrived 或延迟 1.5s 后 resume
                         mainHandler.removeCallbacks(timeoutRunnable)
                         mainHandler.postDelayed({
                             if (cont.isActive) {
@@ -377,7 +412,6 @@ class CsjAdProvider(
                     override fun onRewardArrived(isRewardValid: Boolean, rewardType: Int, extraInfo: android.os.Bundle?) {
                         rewardGranted = isRewardValid
                         android.util.Log.i(TAG, "onRewardArrived valid=$isRewardValid type=$rewardType")
-                        // 立即 resume（onRewardArrived 可能在 onAdClose 之后调用）
                         mainHandler.removeCallbacksAndMessages(null)
                         if (cont.isActive) {
                             cont.resume(RewardResult(
@@ -390,11 +424,11 @@ class CsjAdProvider(
                 })
             }
 
-            android.util.Log.e(TAG, "Reward load start: codeId=$codeId slotKey=$slotKey")
+            android.util.Log.e(TAG, "Reward load start(GroMore): codeId=$codeId slotKey=$slotKey")
             adNative.loadRewardVideoAd(adSlot, object : TTAdNative.RewardVideoAdListener {
                 override fun onError(code: Int, message: String?) {
                     android.util.Log.e(TAG, "Reward onError[$code]: $message")
-                    android.os.Handler(android.os.Looper.getMainLooper()).removeCallbacks(timeoutRunnable)
+                    mainHandler.removeCallbacks(timeoutRunnable)
                     if (cont.isActive) cont.resume(RewardResult(
                         finished = true, errorMessage = "load_failed[$code]: ${message ?: ""}",
                     ))
@@ -403,7 +437,6 @@ class CsjAdProvider(
                 override fun onRewardVideoAdLoad(ad: TTRewardVideoAd) {
                     android.util.Log.e(TAG, "Reward onRewardVideoAdLoad")
                     handleAd(ad)
-                    // GroMore 聚合场景下 onRewardVideoCached 可能不触发，直接 show
                     if (adRef != null && !activity.isFinishing && !activity.isDestroyed) {
                         try {
                             adRef!!.showRewardVideoAd(activity)
@@ -436,10 +469,13 @@ class CsjAdProvider(
         }
     }
 
-    // ── 开屏广告（对齐 flutter_merge 预加载模式） ──
-    //
-    // 1. loadSplashAd → onSplashRenderSuccess 存 ad，回调 onAdLoaded（释放系统 splash）
-    // 2. 等待 container 可见后 showSplashView → onSplashAdClose → 恢复协程
+    // ── 开屏广告（GroMore 聚合模式）──
+
+    /** GroMore 开屏请求信息 */
+    private val csjSplashRequestInfo = object : MediationSplashRequestInfo(
+        MediationConstant.ADN_PANGLE, "", "", ""
+    ) {}
+
     override suspend fun showSplashAd(
         activity: Activity, codeId: String, container: ViewGroup,
         onAdLoaded: (() -> Unit)?, onAdShown: (() -> Unit)?,
@@ -449,18 +485,18 @@ class CsjAdProvider(
             val dm = activity.resources.displayMetrics
             val screenW = dm.widthPixels
             val screenH = dm.heightPixels
-            // SDK 7.5.x+: 仅需 setExpressViewAcceptedSize(dp)
+
             val adSlot = AdSlot.Builder()
                 .setCodeId(codeId)
                 .setExpressViewAcceptedSize(screenW / dm.density, screenH / dm.density)
-                .setAdLoadType(TTAdLoadType.PRELOAD)
                 .setMediationAdSlot(
-                    com.bytedance.sdk.openadsdk.mediation.ad.MediationAdSlot.Builder()
-                        .setMediationSplashRequestInfo(CsjConfig.buildSplashFallback())
-                        .setExtraObject("show_adn_load_error_detail", true)
+                    MediationAdSlot.Builder()
+                        .setMediationSplashRequestInfo(csjSplashRequestInfo)
                         .build()
                 )
                 .build()
+
+            android.util.Log.i(TAG, "开屏广告(GroMore模式): codeId=$codeId")
 
             val adNative = TTAdSdk.getAdManager().createAdNative(activity)
 
@@ -473,12 +509,9 @@ class CsjAdProvider(
             adNative.loadSplashAd(adSlot, object : TTAdNative.CSJSplashAdListener {
                 override fun onSplashLoadSuccess(ad: CSJSplashAd) {
                     loadSuccessReceived = true
-                    // 等待 onSplashRenderSuccess
                 }
 
                 override fun onSplashLoadFail(error: CSJAdError) {
-                    // GroMore 瀑布流中单个 ADN 失败不意味着整体失败，
-                    // 如果已有其他 ADN 加载成功，等待其渲染
                     android.util.Log.e(TAG, "开屏加载失败: code=${error.code}, msg=${error.msg}")
                     if (!loadSuccessReceived && cont.isActive) {
                         cont.resume(false)
@@ -488,13 +521,9 @@ class CsjAdProvider(
                 override fun onSplashRenderSuccess(ad: CSJSplashAd) {
                     if (activity.isFinishing || activity.isDestroyed || !cont.isActive) return
 
-                    // ① 暂存广告引用（对齐 flutter_merge: pendingCsjSplash = ad）
-                    // ② 先回调 onAdLoaded，让调用方释放系统 splash
-                    // ③ 等容器就绪后再真正展示
                     onAdLoaded?.invoke()
                     android.util.Log.i(TAG, "开屏广告素材就绪，等待容器…")
 
-                    // 延迟一帧展示，确保系统 splash 消退不影响 CSJ 倒计时初始化
                     container.post {
                         if (activity.isFinishing || activity.isDestroyed || !cont.isActive) return@post
                         android.util.Log.i(TAG, "开始展示开屏广告")

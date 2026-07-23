@@ -33,8 +33,9 @@ interface AdProvider {
     /** 加载 Banner（返回包含 [View] 的 [StateFlow]，Compose 通过 [androidx.compose.ui.viewinterop.AndroidView] 包裹）。
      *
      * @param activity 部分 SDK（GDT/百度）的 Banner 构造需要 Activity Context，
-     *                 传 null 时这些 SDK 会尝试用 Application context 并可能失败。 */
-    fun loadBanner(codeId: String, activity: Activity? = null): StateFlow<AdLoadState<View>>
+     *                 传 null 时这些 SDK 会尝试用 Application context 并可能失败。
+     * @param expressHeightDp 模板广告期望高度（dp），穿山甲需要与平台代码位配置的尺寸比例一致，传 null 则自动测量容器 */
+    fun loadBanner(codeId: String, activity: Activity? = null, expressHeightDp: Float? = null): StateFlow<AdLoadState<View>>
 
     /** 加载信息流。 */
     fun loadFeed(codeId: String, count: Int): StateFlow<AdLoadState<List<View>>>

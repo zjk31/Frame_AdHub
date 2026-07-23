@@ -10,9 +10,9 @@
 | UI | Jetpack Compose |
 | 架构 | Clean Architecture + 策略模式 |
 | 构建 | Gradle Kotlin DSL |
-| DI | Koin Annotations |
+| DI | Koin DSL（module { single { … } }），不使用 Annotations/KSP |
 | 广告 SDK | 友盟 / 穿山甲 / 优量汇 / 百度 (AAR) |
-| Activity | 单 Activity + Compose Navigation |
+| Activity | 双 Activity：SplashAdActivity（View-based，冷启动优化）+ MainActivity（Compose Navigation） |
 | 最少 SDK | 26 |
 | 目标 SDK | 35 |
 
@@ -27,7 +27,7 @@
 - **AdSdkProvider 策略模式** — 四通道 SDK 可插拔初始化
 - **AdSdkManager** — SharedPreferences 缓存通道 + 远程 API 下发 `adType` 动态切换
 - **AppAdConfig 动态代码位解析** — 根据当前通道选择对应 SDK 的代码位 ID
-- **MergeRemoteConfig** — 远程配置 API URL
+- **MergeRemoteConfig** — 远程配置 API URL（子 App 自行对接自己的后端）
 - 四个 SDK 的 AAR 包 + 配置常量（AppId / 代码位 ID）
 
 ## 不做的东西
@@ -53,6 +53,18 @@
 ### 热启动插屏 (Resume Interstitial)
 App 回到前台时展示插屏。最小间隔 600 秒，首次恢复跳过，纯净模式抑制。
 
+### 设备标识 (DeviceIdManager)
+设备级别唯一标识，优先级：OAID > AndroidID > 持久化 UUID。供广告 SDK 和业务方使用。
+
+### 邀请码 (InviteCodeManager)
+用户邀请码，优先级：友盟 UMID > MD5(时间戳) 兜底。CSJ/百度激励视频需要 setUserId，服务端登录后可覆盖。
+
+### SDK 初始化追踪 (AdSdkInitDao)
+记录各通道 SDK 初始化的渠道、结果、耗时。SharedPreferences 实现，排除广告填充问题时使用。
+
+### 开屏预加载 (SplashAdPreloader)
+CSJ 穿山甲开屏广告预加载：Application.onCreate 中调用 `start()` 提前加载+渲染，SplashAdActivity 通过 `consumePendingAd()` 消费。减少用户等待时间。
+
 ---
 
 ## 已确认的设计决策
@@ -60,15 +72,16 @@ App 回到前台时展示插屏。最小间隔 600 秒，首次恢复跳过，�
 | # | 决策 | 结论 |
 |---|---|---|
 | 1 | 技术栈 | 纯 Kotlin，不取参考项目的 Flutter 层 |
-| 2 | UI | Jetpack Compose |
+| 2 | UI | Compose（主界面）+ View-based（开屏冷启动），双 Activity 各自选择合适方案 |
 | 3 | 广告位 | 全量 8 种 |
 | 4 | 架构 | Clean Architecture + 策略模式（domain/data/ui） |
-| 5 | 远程通道切换 | API 下发 adType → AdChannelStore → AdProvider |
-| 6 | Activity | 单 Activity + Compose Navigation |
-| 7 | DI | Koin Annotations（编译期验证 + 运行时灵活） |
+| 5 | 远程通道切换 | 子 App 自行对接后端。骨架读本地 SharedPreferences 决定通道/代码位。主页通过 AdSdkManager（Koin），开屏直接 new Provider（无 DI） |
+| 6 | Activity | 双 Activity：SplashAdActivity（View-based，冷启动优化）+ MainActivity（Compose Navigation） |
+| 7 | DI | Koin DSL（module { single/viewModel }）。SplashAdActivity 不使用 DI，直接 new Provider 保证冷启动零等待 |
 | 8 | 包结构 | domain/data/ui + data/provider 下按 SDK 物理隔离 |
 | 9 | 网络层 | Retrofit + OkHttp |
 | 10 | KMP | 不做——广告 SDK 只有 Android AAR，无跨平台场景 |
 | 11 | Git 策略 | GitHub Flow：main + feature 分支 |
 | 12 | AAR 管理 | 直接提交到 app/libs/，`.gitattributes` 标记 binary |
+| 13 | 远程配置 | 骨架不硬编码业务后端 URL。SplashAdActivity 读本地 SharedPreferences 决定通道/代码位，子 App 自行实现远程下发 |
 

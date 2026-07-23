@@ -1,6 +1,7 @@
 package cn.manxinghai.zhuimange.ui.screens.feed
 
 import android.view.View
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cn.manxinghai.zhuimange.data.AdSdkManager
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
+@Immutable
 data class FeedUiState(
     val channelName: String = "",
     val codeId: String = "",

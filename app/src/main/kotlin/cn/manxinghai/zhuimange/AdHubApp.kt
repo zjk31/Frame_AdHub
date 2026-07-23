@@ -3,69 +3,44 @@ package cn.manxinghai.zhuimange
 import android.app.Application
 import android.util.Log
 import cn.manxinghai.zhuimange.core.AppContextHolder
-import cn.manxinghai.zhuimange.data.AdSdkManager
+import cn.manxinghai.zhuimange.core.DeviceIdManager
+import cn.manxinghai.zhuimange.core.InviteCodeManager
 import cn.manxinghai.zhuimange.di.adModule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.koin.android.ext.koin.androidContext
-import org.koin.core.context.GlobalContext
 import org.koin.core.context.startKoin
 
 /**
  * Application 入口。
  *
  * 初始化顺序：
- *   1. Koin DI 容器（主线程，确保 SplashAdActivity 可用）
- *   2. 广告 SDK 预热（后台协程）
- *   3. 热启动插屏监听（Application 级 ActivityLifecycleCallbacks）
+ *   1. Koin DI 容器（后台线程，不阻塞 SplashAdActivity 启动）
+ *   2. 设备标识 + 邀请码管理器
+ *   3. 远程广告配置预拉取（异步，供 SplashAdActivity 立即读取缓存）
  *
  * 子 App 接入时在 [startKoin] 的 [modules] 里追加自己的模块，
  * 并在 [onCreate] 末尾调用自己的初始化逻辑。
  */
 class AdHubApp : Application() {
 
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     override fun onCreate() {
         super.onCreate()
-        Log.i("AdHubApp", "onCreate — 开始初始化")
 
-        // ── 0. Context 持有 ──
+        System.setProperty("java.net.preferIPv4Stack", "true")
+        System.setProperty("java.net.preferIPv4Addresses", "true")
+
+        Log.i("AdHubApp", "onCreate")
+
+        // Koin 后台初始化（利用 SplashAdActivity 广告窗口，不阻塞主线程）
+        CoroutineScope(Dispatchers.IO).launch {
+            startKoin { androidContext(this@AdHubApp); modules(adModule) }
+            Log.i("AdHubApp", "Koin 初始化完成")
+        }
+
         AppContextHolder.init(this)
-
-        // ── 1. Koin DI 容器 ──
-        // 主线程启动，确保 SplashAdActivity 能立即拿到 AdSdkManager。
-        // 子 App 在这里追加自己的 module，如 modules(adModule, myBusinessModule)
-        startKoin {
-            androidContext(this@AdHubApp)
-            modules(adModule)
-        }
-        Log.i("AdHubApp", "Koin 初始化完成")
-
-        // ── 2. 广告 SDK 预热（后台，不阻塞启动） ──
-        // 对齐 flutter_merge：不在 Application 中提前调用 TTAdSdk.init，
-        // 统一由 CsjAdProvider.ensureReady() 在 SplashAdActivity 启动后初始化。
-        appScope.launch {
-            try {
-                val manager = GlobalContext.get().get<AdSdkManager>()
-                Log.i("AdHubApp", "ensureProviderReady 开始…")
-                manager.ensureProviderReady()
-                Log.i("AdHubApp", "ensureProviderReady 完成")
-            } catch (e: Exception) {
-                Log.e("AdHubApp", "SDK 预热失败", e)
-            }
-        }
-
-        // ── 3. 热启动插屏监听（Application 级，全局生效） ──
-        try {
-            val hotStartManager =
-                GlobalContext.get().get<cn.manxinghai.zhuimange.core.HotStartInterstitialManager>()
-            hotStartManager.start()
-            Log.i("AdHubApp", "热启动插屏监听已启动")
-        } catch (e: Exception) {
-            Log.w("AdHubApp", "热启动插屏监听启动失败", e)
-        }
+        DeviceIdManager.init(this)
+        InviteCodeManager.init(this)
     }
 }
